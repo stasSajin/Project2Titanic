@@ -1,0 +1,4 @@
+I picked Sacramento City, California because this is where I currently reside. I just moved in this city, so wrangling the dataset allowed me to find more about the city. 
+
+The data has been downloaded from Mapzen: https://mapzen.com/data/metro-extracts/
+The XML file can be found here: https://s3.amazonaws.com/metro-extracts.mapzen.com/sacramento_california.osm.bz2
