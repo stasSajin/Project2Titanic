@@ -1,0 +1,865 @@
+---
+title: "Exploratory Analysis for Prosper Loan Data"
+author: "Stas Sajin"
+date: "March 21, 2016"
+output: markdowntemplates::bulma
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache=TRUE, warning = FALSE, message = FALSE, tidy=TRUE, fig.align = 'center', fig.width = 12, fig.keep='all')
+```
+
+## Introduction
+The following report aims to explore several characteristics of the Prosper Loan Dataset. Prosper is a peer-to-peer lending company that aims to connect individual investors and borrowers in a common marketplace by cutting other intermediaries. The lending service for the Prosper company operates completely online, so they have very little overhead and can provide borrowing rates at lower interest rates compared to other traditional credit lending institutions. The loans provided by investors are considered unsecured personal loans, hence an investor is very interested in examining which loans provide the best return/risk profile for them. The following report aims to essentially provide a preliminary overview for what type of loans provide the best risk-adjusted return.  
+
+**Disclaimer**: It is important to note that the dataset used in this report includes information about loan data up until 03/11/2014. In order to protect their underwriting process from reverse engineering, Prosper does not make loan data immediately available. Instead, they make loan data available 45 days after the close of the quarter ([see here](https://www.prosper.com/about-us/2015/01/26/prosper-updates-its-data-policies-and-reiterates-commitment-to-investors-and-data-quality/)) Therefore, any individual reading this report should not use the conclusions of the report to make investment decisions, because it is very likely that the decisions made during underwriting by Prosper in the past might not be applicable to the current lending environment. 
+
+## Objectives
+Because this is a dataset with a fairly large number of variables, I will try to limit this Exploratory Data Analysis to variables that are important for an investor who tries to maximize risk adjusted return. I will generally focus on the following questions:
+
+1. How does the distribution of yields and estimated returns look like?
+    i. Do estimated returns show changes across the under-writing period? 
+    ii. What is the 1% and 5% [value at risk](http://www.investopedia.com/terms/v/var.asp) in estimated returns?  
+    iii. How do estimated returns compare to realized returns across loan status?
+    
+2. Examining risk adjusted return measures  
+    i. Examine returns for each prosper score and prosper rating. 
+    ii. Examine the ratio between expected return and prosper score (r/p) and the ratio between returns and prosper rating. How much return are we gaining for each point decrease in prosper score/rating?
+    iii. Create a [Sharpe measure](http://www.investopedia.com/terms/s/sharperatio.asp) for each loan using historical 1-year Treasury yield rates as the risk free rate,actualized returns, and standard deviation of estimated returns. The goal of this section is to create a risk adjusted return measure. 
+
+3. How do the following variables relate to Sharpe ratio?
+    i. What is the relationship between debt-to-income ratio and Sharpe ratio?
+    ii. What is the relationship between loan size and and Sharpe ratio?
+    iii. Do some loan categories (such as debt consolidation loans) show better risk-return profile than other categories?
+
+4. What is the pre-payment rate risk?
+
+5. Final Figures and Summary
+    
+6. Reflections
+
+
+
+
+###Libraries
+Load the following libraries 
+```{r, echo=TRUE}
+library(data.table)
+library(ggplot2)
+library(rmarkdown)
+library(dplyr)
+library(gridExtra)
+library(GGally)
+library(ggthemes)
+library(Hmisc)
+library(lubridate)
+library(zoo)
+library(knitr)
+library(Quandl)
+library(tidyr)
+```
+
+
+###Data Cleaning and Pre-Processing
+
+The dataset contains 113,937 loans and 81 variables. The data is available on the following [page](https://www.google.com/url?q=https://s3.amazonaws.com/udacity-hosted-downloads/ud651/prosperLoanData.csv&sa=D&ust=1458698381541000&usg=AFQjCNH0A3HCOrotQs-7ITXTSwsP3yFeEg). The variable descriptions can be found [here](https://www.google.com/url?q=https://docs.google.com/spreadsheet/ccc?key%3D0AllIqIyvWZdadDd5NTlqZ1pBMHlsUjdrOTZHaVBuSlE%26usp%3Dsharing&sa=D&ust=1458698381543000&usg=AFQjCNEVz02Hyn01T94iLHVSPLRRUryg1Q).
+
+
+```{r dataLoad}
+prosper<-fread('prosperLoanData.csv', na.strings=c("NA",""))
+#change prosper into a dataframe
+prosper<-as.data.frame(prosper)
+```
+
+The first I will do with the data is perform several checks on the data quality. The description of the loan dataset specifies that there are 113937 loans, so we should expect to see 113937 unique ListingKey and ListingNumber counts. 
+
+```{r, unique}
+#find the unique counts in ListingKey and listingNumber
+uniqueNumbers<-length(unique(prosper$ListingNumber))
+cat("Total unique ListingNumber:", as.character(uniqueNumbers))
+uniqueKeys<-length(unique(prosper$ListingKey))
+cat("Total unique ListingKey:", as.character(uniqueKeys))
+```
+
+Unfortunately, the dataset indicates that there are 113066 unique keys and numbers, so there likely to be some duplicates. I will examine the duplicate values for loans, just to make sure that the duplication doesn't extend only to the ListingNumber and ListingKey, but to all 81 variables. Any duplicated rows will be removed from the dataframe. 
+
+```{r duplicate}
+#extract the ListingNumber that are duplicates
+Listing_number_duplicated<-prosper$ListingNumber[duplicated(prosper$ListingNumber)]
+
+#create a dataset that extract rows for all duplicate records
+duplicated_rows<-subset(prosper, prosper$ListingNumber %in% Listing_number_duplicated)
+
+#View(duplicated_rows)
+
+###it seems like the duplicate values are real duplicates; 
+#remove dulpicated rows
+p_no_duplicates<-prosper[!duplicated(prosper$ListingNumber),]
+
+#remove prosper and duplicated_rows dfs from global environment so as to not hog memory
+rm(duplicated_rows)
+rm(prosper)
+```
+
+I noticed that there are several columns in the dataset that specify the date, so I will make sure to convert those columns in date format. 
+
+```{r date, echo=TRUE}
+#create vector with date variable names.
+date_variables<-c("ListingCreationDate","ClosedDate",    "DateCreditPulled","FirstRecordedCreditLine","LoanOriginationDate")
+
+#convert into date format year-month-date hour:minute:second
+p_no_duplicates[,date_variables] <-lapply(p_no_duplicates[,date_variables],ymd_hms)
+
+#I will also create a column that will indicate if the data is for pre-2009 or after 2009 based on whether there is a an NA value in the EstimatedEffectiveYield variable. 
+p_no_duplicates$preAfter2009<-ifelse(is.na(p_no_duplicates$EstimatedEffectiveYield)==TRUE,
+        'pre2009','after2009')
+
+#examine the counts, just to make sure that everything looks good. There shold be 29084 loans before 2009.
+table(p_no_duplicates$preAfter2009)
+```
+
+
+Next, I will look at some of the variable characteristics using the describe function from [Hmisc package](https://cran.r-project.org/web/packages/Hmisc/index.html). The output of this function is very useful when it comes to examined which variables should be used in EDA. Note that the code below will not output the result in the html file because the summary output for all 81 variables will take some space. The reader is nonetheless welcome to run this code in the .rmd file.
+
+```{r echo=TRUE, results="hide"}
+describe.data.frame(p_no_duplicates)
+```
+
+
+###1. How does the distribution of estimated return look like?
+As an investor, I'm interested in examining the relationship between a variety of factors and return. One thing I noticed when examining variable descriptions, is that some variables have data only for loan listings after 2009 (for instance, estimated returns variable has the data available only after 2009). 
+
+For now I will focus on LenderYield, which represents the interest rate on the loan minus the servicing fee. I will break down the yields for the periods before and after 2009, because I noticed that a lot of variables seem to apply only for the periods after 2009, and I want to find out why. Later, I will examine the estimated return, which accounts for estimated losses due to chargeoff, defaults, and other fees.    
+
+
+```{r}
+#set the LenderYield Variable as numberic
+p_no_duplicates$LenderYield<-as.numeric(p_no_duplicates$LenderYield)
+
+theme_set(theme_solarized())
+
+p1<-ggplot(data=p_no_duplicates, aes(x=LenderYield, fill=preAfter2009))+
+    geom_density(alpha=.5, adjust=.75)+
+    ggtitle('Yield for before and after 2009 periods')
+
+p2<-ggplot(p_no_duplicates, aes(preAfter2009, LenderYield)) + 
+    geom_boxplot(aes(fill = preAfter2009)) +
+    theme(legend.position = "none")+
+    ggtitle('Boxplots for both pre and after 2009 periods')
+
+grid.arrange(p1,p2, nrow=2)
+```
+
+A few interesting things can be gathered from this graph:  
+    1. The distribution of yields seems to be somewhat bimodal in both periods, since there are a lot of loans with really good returns. This is interesting, because later we can explore in what way are the good loans different from the loans that provide smaller returns.  
+    2. There seems to be a larger variability in yields for pre-2009 period compared to the yields in the period after 2009. This suggests that the risk of loans (i.e., variability in yields) pre-2009 was a bit higher.
+    3. The median seems to be a bit higher for the period after 2009. Moreover, the boxplot for the pre2009 period shows more variability, with some loans actually having negative yields (likely because the underwriting fees ate up some of the return potential).
+
+Here is the info about means, medians, and 95%CI for each period. I assume that the confidence interval is within 1.96 standard errors from the mean yield of each period.
+
+```{r}
+p_no_duplicates %>% group_by(preAfter2009) %>%
+    summarise(mean=mean(LenderYield),
+              median=median(LenderYield),
+              n=n(),
+              LCI=(mean(LenderYield)-(1.96*sd(LenderYield)/length(LenderYield))),
+              UCI=(mean(LenderYield)+(1.96*sd(LenderYield)/length(LenderYield))))
+```
+
+Both the boxplot and the descriptive statistics indicate that the median returns are a bit higher for the period after 2009. This suggests that there might be a regime change between the two periods. In the following graphs, I will examine more closely if there is any regime change happening between periods before and after 2009. I will plot the LenderYield variable across time (i.e., for each loan origination date). The plot below will show several levels of granularity for yields.
+
+```{r, }
+#create colums for day, month, and year of loan origination
+p_no_duplicates$dayOrigination<-ymd(as.Date(p_no_duplicates$LoanOriginationDate))
+p_no_duplicates$monthOrigination<-as.yearmon(as.Date(p_no_duplicates$LoanOriginationDate))
+p_no_duplicates$yearOrigination<-year(p_no_duplicates$LoanOriginationDate)
+                           
+#plot the yield at the most granular, individual loan creation date scale
+p1<-ggplot(data=p_no_duplicates, aes(x=ListingCreationDate, y=LenderYield))+
+    geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean, alpha=.75)+
+    ggtitle("Most Granular, individual loan yields")+
+    geom_hline(yintercept = c(.35,.03))
+
+
+#plot the yield on a daily scale
+p2<-ggplot(data=p_no_duplicates, aes(x=ymd(as.Date(ListingCreationDate)), y=LenderYield))+
+    geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean)+
+    ggtitle("Daily loan yields")
+
+#plot the yield on a monthly scale
+p3<-ggplot(data=p_no_duplicates, aes(x=as.yearmon(as.Date(ListingCreationDate)), y=LenderYield))+
+    geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean)+
+    ggtitle("Monthly loan yields")
+
+#plot the yield on a yearly scale
+p4<-ggplot(data=p_no_duplicates, aes(x=year(ListingCreationDate), y=LenderYield))+
+    geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean)+
+    ggtitle("Yearly loan yields")
+
+grid.arrange(p1,p2,p3,p4, ncol=2)
+```
+
+The first thing we can notice in this data is that there seems to be a break between the two periods when no loan listings were created. This break is unusual, but after some searching, I found the [SEC Cease and Tesist order to Prosper](https://www.sec.gov/litigation/admin/2008/33-8984.pdf), which stipulates that the role of Prosper is more of a bank, rather thank than a marketplace for loans. Because Prosper is ultimately responsible for the underwriting process, they had to discontinue for a period their operations and market their loans as actual investments. Hence, they stopped listing any loans until they conformed to SEC regulations.  
+
+Another interesting thing to note, when examining the individual loan yields, is that in the period before 2009, there are some loans that are were listed with really low yields (below 3%) and really high yields above 30% (see the horizontal lines marking these regions in panel 1). It is very unusual that some loans had negative yields, since this means that the lender is paying the borrowers to take out the loan. After some exploration, I found that there are 22 loans that had a yield at or below zero. None of the loans had any issues with them (all the listings for these loans had all the information and there was no evidence pointing out that these loans are bad data) 
+
+```{r, echo=FALSE}
+a<-p_no_duplicates %>% filter(LenderYield<=0)
+```
+
+Once Prosper resumed it's activities, they likely decided that the variability in yields for loans should be in a narrower range. You can see that the daily and monthly loan yields are increasingly less variable across time.  
+
+####i. Do estimated returns show changes across the under-writing period? 
+
+Although the yields are super-impressive (above 17%), I must note that it does not account for defaults and chargeoffs. Also, the yields are not representing the risk profile of the loans. Hence, I should use a different metric that examines the bottom line return to the investor. After examining the variable descriptions, I found that EstimatedReturn variable might be more appropriate as a measure of return. In the plots below, I will examine the EstimatedReturn variable on an individual yearly basis. In addition to that, I will plot the 95% confidence interval in estimated returns for each year.  
+
+Note that EstimatedReturn variable is provided only for loans after 2009. The black dot represents the mean. The numbers also represent the mean.
+
+```{r}
+p_no_duplicates$EstimatedReturn<-as.numeric(p_no_duplicates$EstimatedReturn)
+ 
+#create a variable for year listing creation date
+p_no_duplicates$ListCreationYear<-as.factor(year(p_no_duplicates$ListingCreationDate))
+
+Returns<-p_no_duplicates %>% filter(!is.na(EstimatedReturn))
+
+p1<-ggplot(Returns, aes(ListCreationYear, EstimatedReturn)) + 
+    geom_boxplot(aes(fill = ListCreationYear))+
+    stat_summary(fun.y=mean, color="black", geom="point", 
+               shape=18, size=3,show_guide = FALSE)+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=-0.9, aes( label=round(..y.., digits=3)))+
+    theme(legend.position = "none")+
+    ggtitle('Expected Returns for loans listed in 2009-2014')+
+    scale_y_continuous(breaks=seq(-.2, .3, .05))
+
+p2<-ggplot(Returns, aes(ListCreationYear)) + 
+    geom_bar()+
+    theme(legend.position = "none")+
+    ggtitle('Number of loans listed in 2009-2014')
+
+grid.arrange(p1,p2, nrow=1)
+
+
+
+year_returns<-p_no_duplicates %>%
+     filter(year(ListingCreationDate)>=2009 & !is.na(EstimatedReturn)) %>%
+     group_by(year(ListingCreationDate)) %>%
+     summarise(meanReturn=mean(EstimatedReturn),
+            median=median(EstimatedReturn),
+            n=n(),
+            LCI=(mean(EstimatedReturn)-(1.96*sd(EstimatedReturn)/length(EstimatedReturn))),
+            UCI=(mean(EstimatedReturn)+(1.96*sd(EstimatedReturn)/length(EstimatedReturn))))
+```
+
+It seems like the mean and median returns have decreased as across time despite the fact that the increase in the number of loan listings, indicating that the underwriting process has become more efficient at weeding out risky loans.   
+
+####ii.What is the 1% and 5% VAR?
+
+Next, I want to find out what is my 1% VAR and 5% VAR at risk. In other words, I want to find out how much return should I expect to earn if I get really unlucky and pick the bottom 1% and bottom 5% of loans. I will then plot the loans that fall below 1% VAR in red and loans between 1% and 5% will be plotted in yellow.
+
+```{r}
+var_risk<-Returns %>%
+    summarise(Var1percent=quantile(EstimatedReturn, .01),
+              Var5percent=quantile(EstimatedReturn, .05))
+
+ggplot(Returns, aes(ListCreationYear, EstimatedReturn)) + 
+    geom_boxplot(aes(fill = ListCreationYear))+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-.2, .3, .05))+
+    geom_point(color=ifelse(Returns$EstimatedReturn<=quantile(Returns$EstimatedReturn,.05),
+                    ifelse(Returns$EstimatedReturn<=quantile(Returns$EstimatedReturn, .01),
+                           "red", "orange"),"black"))+
+    ggtitle("Loans within 1% (RED) and 5% VAR (YELLOW & RED)")
+
+```
+
+Assuming that one constantly reinvests the interest income, there is a 99% chance that would've earned a minimum of 4% return or a 95% chance that the return could be a minimum of 5.298%. This assumes that one had the ability to invest in all the loans. These estimated returns aren't that bad. Moreover, it seems that VAR is smaller in more recent periods, indicating that loans in the recent years have a very small risk of negative returns.
+
+
+####iii. How do estimated returns compare with actual returns?
+One issue with the plot above is that returns are estimates provided by Prosper at the time the listing was created. This is an issue, since estimated returns are predictions about the future rather than historical values. In this section, I will try to achieve a measure of realized annualized historical return for loan whose status was either Completed, ChargedOff, or Defaulted.
+
+
+First what I will do is create a column called AnnualizedReturn that finds the realized annualized returns for Completed, ChargedOff or Defaulted Loans. 
+
+For completed loans, I calculate the cumulative return as follows:
+
+$$r_c=(CustomerPayments-LoanOriginalAmount-ServiceFees)/LoanOriginalAmount$$
+
+For Chargeoffs and defaulted loans, the cumulative return formula is:
+
+$$r_c=(CustomerPayments+NonPrincipalRecoveryPayments-ServiceFees-CollectionFees-\\
+            -LoanOriginalAmount-NetPrincipalLoss)/LoanOriginalAmount$$
+
+After finding the cumulative return, I annualized it using this formula:
+
+$$r_a=(1+r_c)^{12/LoanMonthsSinceOrigination} $$
+
+```{r returnCalculations}
+#convert these colums to numeric
+numColums<- c("LoanMonthsSinceOrigination","LoanOriginalAmount","LP_CustomerPayments",
+              "LP_CustomerPrincipalPayments","LP_InterestandFees","LP_ServiceFees",
+              "LP_CollectionFees","LP_GrossPrincipalLoss","LP_NetPrincipalLoss",
+              "LP_NonPrincipalRecoverypayments","PercentFunded")
+
+p_no_duplicates[numColums] <- sapply(p_no_duplicates[numColums],as.numeric)
+
+
+#find the returns for completed loans
+completed<-p_no_duplicates %>% filter(LoanStatus=="Completed") %>%
+    mutate(cumulativeReturn=(LP_CustomerPayments-LoanOriginalAmount+LP_ServiceFees)/LoanOriginalAmount) %>%
+    mutate(AnnualizedReturn=((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
+
+
+#find the returns for charge offs and defaults; I calculate the return as follows
+chargeoff<-p_no_duplicates %>% 
+    filter(LoanStatus=="Chargedoff" | LoanStatus=="Defaulted") %>%
+    mutate(cumulativeReturn=(LP_CustomerPayments+LP_NonPrincipalRecoverypayments+LP_ServiceFees+LP_CollectionFees-(LoanOriginalAmount-LP_NetPrincipalLoss))/LoanOriginalAmount) %>%
+    mutate(AnnualizedReturn=((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
+
+pastLoans<-rbind(completed, chargeoff)
+
+#examine the dataframes 
+# a<-completed %>% select(LoanMonthsSinceOrigination, EstimatedReturn, cumulativeReturn, yearlyReturn)
+# 
+# b<-chargeoff %>% select(BorrowerAPR,LoanMonthsSinceOrigination, EstimatedReturn, cumulativeReturn, yearlyReturn)
+```
+
+Below, I will plot the annualized returns for each year. The mean annualized return is provided slightly above the boxplot in the graph.
+```{r}
+ggplot(pastLoans, aes(ListCreationYear, AnnualizedReturn)) + 
+    geom_boxplot(aes(fill = ListCreationYear))+
+    theme(legend.position = "none")+
+    ggtitle("Actual Returns from Past Loans (Includes Completed, Charged Off, and Defaults)")+
+    stat_summary(fun.y=mean, color="black", geom="point", 
+               shape=18, size=3,show_guide = FALSE)+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=-5.0, aes( label=round(..y.., digits=3)))+
+    scale_y_continuous(breaks=seq(-1, .5, .05))
+```
+
+One thing becomes super clear: the estimated returns do not provide a good understanding for what the actual returns might be because they do not account precisely for defaulted loans and chargeoffs. Note the y-axis, where quite a few loans have negative returns. Nonetheless, the year 201 and 2015 showed pretty good returns (much better than a lot of other fixed income instruments on the market).
+
+Next, I will plot the annualized returns by faceting on loan status
+
+```{r}
+ggplot(pastLoans, aes(ListCreationYear, AnnualizedReturn)) + 
+    geom_boxplot(aes(fill = ListCreationYear))+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    facet_wrap(~LoanStatus)
+    ggtitle("Actual Returns from Past Loans for each loan status")
+```
+
+There seems to be a bit too much information in this plot, so below I will replot the figure above by removing year as a variable. On the plot on the right, the y scale goes from -1 to .3; On the plot to the left, I zoom in the scale from -.05 to .3.
+
+```{r}
+p1<-ggplot(pastLoans, aes(LoanStatus, AnnualizedReturn)) + 
+    geom_boxplot(aes(fill = LoanStatus))+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    ggtitle("Actual Returns each loan status")
+
+p2<-ggplot(pastLoans, aes(LoanStatus, AnnualizedReturn)) + 
+    geom_boxplot(aes(fill = LoanStatus))+
+    theme(legend.position = "none")+
+    stat_summary(fun.y=mean, color="black", geom="point", 
+               shape=18, size=3,show_guide = FALSE)+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=-1.0, aes( label=round(..y.., digits=3)))+
+    scale_y_continuous(breaks=seq(-1, .3, .05), limits =c(-.05,.3))+
+    ggtitle("Zoomed actual returns for each loan status")
+
+grid.arrange(p1,p2, nrow=1)   
+```
+
+It seems that the median and mean return for all three types of loans is positive, which means that Prosper does a relatively good job with recovering some of their loses on chargedoff and defaulted loans. Moreover, the chargedoff loans and completed loans don't seem to be that different from each other when it comes to mean and median returns. Below, I will examine some of the descriptive statistics for each loan type (i.e., mean, median, 95%CI). 
+
+```{r}
+loanTypeStats<-pastLoans %>% filter(!is.na(AnnualizedReturn)) %>%
+    group_by(LoanStatus) %>%
+    summarise(mean=mean(AnnualizedReturn),
+    median=median(AnnualizedReturn),
+    n=n(),
+    LCI=(mean(AnnualizedReturn)-(1.96*sd(AnnualizedReturn)/length(AnnualizedReturn))),
+    UCI=(mean(AnnualizedReturn)+(1.96*sd(AnnualizedReturn)/length(AnnualizedReturn))))
+
+a<-pastLoans %>% select(LP_CustomerPayments,LP_CustomerPrincipalPayments,LP_InterestandFees) %>%
+    mutate(total=(LP_CustomerPrincipalPayments+LP_InterestandFees)-LP_CustomerPayments)
+
+loanTypeStats
+```
+
+This confirms the suspicion that after accounting for chargeoffs and defaults, the actual return is much lower than the estimated return given by prosper. 
+
+Next, let's find the mean return for all loans.
+```{r}
+mean(loanTypeStats$mean)
+```
+
+The mean return an investor would expect to get by investing in all loans should be about 3.54%.
+
+
+We still have one issue with how we compared our annualized returns and the estimated returns. The estimated returns in section 1.i include the period after Prosper restarted it's operations. As I pointed out above, during that period (2009-2014) Prosper had lower volatility in estimated returns, likely because they perfected their underwriting model.Therefore, I need to compare the estimated returns and actual returns using the same periods in order to understand how closely are the two returns aligned with each other. In the plot below, I will plot the difference between actual and expected return for the completed, chargedoff, and defaulted loans after 2009. The numbers below the boxplots represent the means.
+
+```{r}
+ggplot(pastLoans, aes(LoanStatus, y=I(AnnualizedReturn-abs(EstimatedReturn))))+ 
+    geom_boxplot(aes(fill = LoanStatus))+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    ggtitle("Over estimating returns during listing")+
+    stat_summary(fun.y=mean, color="black", geom="point", 
+               shape=18, size=3,show_guide = FALSE)+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=2.0, aes( label=round(..y.., digits=3)))
+```
+
+This is a really disconcerting picture because it shows that the bulk of all loans types have over-estimated the returns when the loan was listed (note how all the boxes are below zero and the mean and median are negative). Note also that in come cases the difference between two rates is below -1. This happens when the Estimated Return is positive but the actual return is a 100%loss on the loan.
+
+Let's find out what the 1% and 5% VAR for actual returns is.
+
+```{r}
+pastLoans %>%
+    filter(!is.na(AnnualizedReturn)) %>%
+    summarise(Var1percent=quantile(AnnualizedReturn, .01),
+              Var5percent=quantile(AnnualizedReturn, .05))
+```
+
+The 1% and 5% VAR for annualized returns is -1.12% and 0.328% respectively. In other words, there is a 99% chance that one would lose at most 1.12% of their investment 
+
+In the next section, I will examine risk adjusted returns.
+
+###2. Examining risk adjusted return measures
+Any seasoned investor knows that with greater return comes greater risk, so a focus on purely either return or risk is not the best way to judge the worth of an investment. Instead, the worth on an investment should be taking both risk and return into account. In this section, I explore in what way the risk and return can be combined.
+
+####i. Examine returns for each prosper score. The prosper score is a custom built score using historical Prosper data. The score ranges from 1-11, with 11 being the lowest risk score.  
+
+In the figure below, I plot in the top two panels the annualized returns (which we calculated above) and the estimated returns for each prosper score. The bottom panel represent the number of loans that are in each prosper score. Note that ProsperScore variable is available for loans after 2009.
+
+```{r}
+p_no_duplicates$`ProsperRating (numeric)`<-as.factor(as.integer(p_no_duplicates$`ProsperRating (numeric)`))
+pastLoans$`ProsperRating (numeric)`<-as.factor(as.integer(pastLoans$`ProsperRating (numeric)`))
+
+p_no_duplicates$ProsperScore<-as.factor(as.integer(p_no_duplicates$ProsperScore))
+pastLoans$ProsperScore<-as.factor(as.integer(pastLoans$ProsperScore))
+
+p1<-ggplot(subset(pastLoans,!is.na(EstimatedReturn)), aes(x=ProsperScore, y=AnnualizedReturn))+ 
+    geom_boxplot()+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    ggtitle("Annualized Returns for Each Prosper Score")
+
+p2<-ggplot(subset(pastLoans,!is.na(EstimatedReturn)), aes(x=ProsperScore, y=EstimatedReturn))+ 
+    geom_boxplot()+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    ggtitle("Estimated Returns for Each Prosper Score")
+
+
+p3<-ggplot(data=subset(pastLoans,!is.na(EstimatedReturn)), aes(x=ProsperScore))+
+    geom_bar(stat="count")+
+    theme(legend.position = "none")+
+    ggtitle("# Loans for each prosper score")
+
+grid.arrange(p1,p2,p3, nrow=1)
+```
+
+The graphs above should show that with lower risk (i.e., higher prosper score), the return earned on the loan should decrease. The relationship however is not that clean. For instance, loans with scores 2 and 3 show lower return profile, which is unusual. Moreover, it seems like there are very few loans that have a score of 3. Let's examine the statistical relationship between prosper score and annualized return. I'll use the spearman rank correlation test.
+
+```{r}
+cor.test(pastLoans$AnnualizedReturn,
+         as.integer(pastLoans$ProsperScore),method="spearman",conf.level = 0.95)
+```
+
+The correlation test between prosper score and annualized return is significant, but it's important to point out that that significance doesn't imply a sign of a strong relationship because we have thousands of observations.Next, I'll examine the relationship between prosper score and estimated return.
+
+```{r}
+cor.test(pastLoans$EstimatedReturn, 
+         as.integer(pastLoans$ProsperScore),method="spearman", conf.level = 0.95)
+```
+
+It seems like there is a similar relationship between prosper score and annualized return rather than between prosper score and estimated return. 
+
+I'm not very satisfied with the relationship between prosper score and the two measures of return. I'll examine next another ordinal scale for risk (see definition below)
+> ProsperRating (numeric)	The  Prosper Rating assigned at the time the listing was created: 0 - N/A, 1 - HR, 2 - E, 3 - D, 4 - C, 5 - B, 6 - A, 7 - AA.  Applicable for loans originated after July 2009.
+
+```{r}
+p1<-ggplot(subset(pastLoans,!is.na(EstimatedReturn)), aes(x=`ProsperRating (numeric)`, y=AnnualizedReturn))+ 
+    geom_boxplot()+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    ggtitle("Annualized Returns for Each Prosper Score")
+
+p2<-ggplot(subset(pastLoans,!is.na(EstimatedReturn)),
+    aes(x=`ProsperRating (numeric)`, y=EstimatedReturn))+ 
+    geom_boxplot()+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    ggtitle("Estimated Returns for Each Prosper Score")
+
+
+p3<-ggplot(data=subset(pastLoans,!is.na(EstimatedReturn)),
+    aes(x=`ProsperRating (numeric)`))+
+    geom_bar(stat="count")+
+    theme(legend.position = "none")+
+    ggtitle("# Loans for each prosper score")
+
+grid.arrange(p1,p2,p3, nrow=1)
+```
+
+Graphically, the relationship between the second type of prosper score and annualized or estimated return is much more pronounced relative the previous prosper score. The correlations bellow should confirm that.
+
+```{r}
+cor.test(pastLoans$EstimatedReturn, 
+         as.integer(pastLoans$`ProsperRating (numeric)`),
+         method="spearman", conf.level = 0.95)
+
+cor.test(pastLoans$AnnualizedReturn,
+         as.integer(pastLoans$`ProsperRating (numeric)`),
+         method="spearman",conf.level = 0.95)
+```
+ The Spearman rho between estimated return and prosper rating is -.60. For annualized return and prosper rating, the correlation is a bit lower (-.468). Ultimately, this indicates that we should use the prosper rating rather than prosper score as a measure of risk.
+
+####ii. Examine the ratio between expected return and prosper rating) (r/p). How much return are we gaining for each point decrease in prosper rating)?
+
+In this section, I will examine the ratio between annualized return and prosper rating and the ratio between estimated return and prosper rating. The purpose of these ratios is to have a metric that combines both return and risk. This ratio will tell us how much are we losing in our return for every unit increase in prosper rating (i.e., for every unit decrease in risk).
+
+```{r}
+#create annualizedRRatio
+pastLoans$annualizedRRatio<-pastLoans$AnnualizedReturn/as.numeric(pastLoans$`ProsperRating (numeric)`)
+#create estimatedRRatio
+pastLoans$estimatedRRatio<-pastLoans$EstimatedReturn/as.numeric(pastLoans$`ProsperRating (numeric)`)
+
+pastLoans %>% group_by(`ProsperRating (numeric)`) %>%
+    summarise(meanRealized=mean(annualizedRRatio, na.rm=TRUE),
+              medianRealized=median(annualizedRRatio, na.rm=TRUE),
+              meanEstimated=mean(estimatedRRatio, na.rm=TRUE),
+              medianEstimated=median(estimatedRRatio, na.rm=TRUE))
+
+#plot the boxplots of the two ratios for each rating
+ggplot(subset(pastLoans,!is.na(EstimatedReturn)),
+    aes(x=`ProsperRating (numeric)`, y=annualizedRRatio))+ 
+    geom_boxplot()+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    ggtitle("Ratio between realized return and prosper rating")
+
+ggplot(subset(pastLoans,!is.na(EstimatedReturn)),
+    aes(x=`ProsperRating (numeric)`, y=estimatedRRatio))+ 
+    geom_boxplot()+
+    theme(legend.position = "none")+
+    scale_y_continuous(breaks=seq(-1, .3, .05))+
+    ggtitle("Ratio between realized return and prosper rating")
+
+```
+
+It seems like we gain the largest increase in return when we are buying the most the loans with a prosper rating of 1. The graph shows that there is a non-linear decrease in return for every unit of risk taken. Although one could jump to the conclusion that the risk-adjusted profile for loans with prosper rating of 1 looks the best, the prosper rating is not granular enough to account to measure risk. For instance, one issue with the prosper rating is that it has an ordinal scale, so that a decrease in risk from 1 to 2 does not translate to the same magnitude in the decrease in risk from 2 to 3. For this reason, below I will try to create a Sharpe measure for each loan that will be based on purely interval measures. 
+
+####iii. Create a [Sharpe measure](http://www.investopedia.com/terms/s/sharperatio.asp) for each loan using historical federal interest rates as the risk free rate, estimated returns, and standard deviation of estimated returns. The goal of this measure is to provide a risk adjusted return. 
+
+The formula for the Sharpe measure will take the annualized returns for each loan and subtract the risk free rate and divide by the standard deviation of realized annualized returns of all the loans.
+
+$$s=\frac{r_a - r_f}{\sigma}$$
+
+The risk free rate in this case will be the 1-year US treasury yield. The treasury yield will be a dynamic measure because I will be using the daily yields rather than a static annual measure. 
+
+The point of this feature is to answer the following question: how much can an investor earn above a risk-free investment such as the 1-year US treasury for every unit of risk (ie, standard deviation)? If the Sharpe measure is 0 or bellow 0, then the investor is better off putting his money in the risk-free instrument rather than investing in prosper loans.
+
+First, I will download the daily 1-year US treasury yield curve rates using Quantdl. I will merge this data with the prosper dataset. Afterwards, I will calculate the Sharpe ratio for each loan.
+
+```{r}
+#load  yields from Quandl
+treasuryRates<-Quandl("USTREASURY/YIELD", trim_start="2005-01-01", trim_end="2015-01-01")
+treasuryRatesDaily<-treasuryRates %>% select(Date, `1 YR`) %>%
+    rename(dayOrigination=Date) 
+
+#change dayOrigination to date
+pastLoans$dayOrigination<-as.Date(pastLoans$dayOrigination) 
+
+###combine the dataframes pastLoans and treasuryRatesDaily based on dayOriginationColumn
+merged<-left_join(pastLoans, treasuryRatesDaily, by="dayOrigination")
+
+#calculate the sharpe ratio for each loan; note that I divided the treasury yield by 100 to convert it into proportion.
+merged<-merged %>% filter(!is.na(AnnualizedReturn)) %>%
+    mutate(sharpe=(AnnualizedReturn-((`1 YR`)/100))/sd(AnnualizedReturn))
+```
+
+Now, I will plot the Sharpe measures for each year. The numbers in the second right panel represent the mean Sharpe ratio for each year.
+
+```{r}
+notzoomed<-ggplot(merged, aes(ListCreationYear, sharpe)) + 
+    geom_boxplot(aes(fill = ListCreationYear))+
+    theme(legend.position = "none")+
+    ggtitle("Average sharpe ratio for each year)")+
+    scale_y_continuous(breaks=seq(-20, 7, 1))
+
+zoomed<-ggplot(merged, aes(ListCreationYear, sharpe)) + 
+    geom_boxplot(aes(fill = ListCreationYear))+
+    theme(legend.position = "none")+
+    ggtitle("Average sharpe ratio for each year (Zoomed Scale)")+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=-1.0, aes( label=round(..y.., digits=3)))+
+    scale_y_continuous(breaks=seq(-5, 5, .5), limits = c(-5,5))
+
+grid.arrange(notzoomed, zoomed, nrow=1)
+```
+
+These Sharpe ratios are really impressive in the most recent years. For the year 2013 and 2014, the ratios were 1.48 and 1.322. In other words, if one invested in the loans issued during those years, they would gain on average 1.48 and 1.322 extra return above the risk-free rate for every unit increase in standard deviation of returns. It is important to note that Sharpe ratio is nothing more than a way of standardizing your returns around a baseline. In our case, the baseline happens to be the risk free rate. In part 3, I will explore different loan characteristics that would lead to an increase in the average loan Sharpe ratio. 
+
+###3. How do the following variables relate to risk-adjusted returns?
+####i. What is the relationship between debt-to-income ratio and risk adjusted return measures like sharpe ratio?
+
+First, I will try to get a better sense of the distribution in debt-to-income ratio before I examine it's relationship to Sharpe ratio.
+
+```{r}
+#change debt-to-income to numeric
+merged$DebtToIncomeRatio<-as.numeric(merged$DebtToIncomeRatio)
+
+
+#plot debt to income, just to see if it is normal
+ggplot(data=merged, aes(x=DebtToIncomeRatio))+geom_histogram()+
+    ggtitle("Very large skew in this ratio")
+```
+
+Ratios higher than 1 for debt to income is worrisome since it indicates that one has more debts that income. Moreover, we have one outlier. What I will do next is transform the data and remove the top 1% of outliers. 
+
+```{r}
+noMissing<-subset(merged, !is.na(DebtToIncomeRatio))
+    
+ggplot(data=noMissing, aes(x=sqrt(DebtToIncomeRatio)))+
+           geom_histogram()+
+    scale_x_continuous(limits = c(0, quantile(noMissing$DebtToIncomeRatio,.99)))+
+    ggtitle("Transformed and with top 1% outliers removed")
+```
+
+I used the sqrt transformation and removed top 1% of outliers. The transformed data looks much better
+
+```{r}
+ggplot(data=noMissing, aes(x=sqrt(DebtToIncomeRatio), y=sharpe))+
+    geom_point(alpha=.01)+
+    geom_smooth(method="lm")+
+    scale_x_continuous(limits = c(0, quantile(noMissing$DebtToIncomeRatio,.99)))+
+    scale_y_continuous(limits = c(-1, 6))+
+    ggtitle("Relationship between Sharpe and debt-to-income ratio")
+```
+
+There seems to be a somewhat positive relationship between debt to income and sharp ratio (i confirmed the same relationship when I plotted EstimatedReturn and AnnualizedReturn on the y-axis). This means that borrowers with higher debt-to-income tend to provide better risk adjusted returns.
+
+####ii. What is the relationship between loan size and Sharpe?
+
+```{r}
+#change loan size to numeric
+merged$LoanOriginalAmount<-as.numeric(merged$LoanOriginalAmount)
+
+ggplot(data=merged, aes(x=LoanOriginalAmount, y=sharpe))+
+    geom_point(alpha=.01)+
+    geom_smooth(method="lm")+
+    scale_y_continuous(limits = c(-1, 6))+
+    ggtitle("Relationship between Sharpe and debt-to-income ratio")
+```
+
+There seems to be a slightly negative relationship between loan size and Sharpe.
+
+####iii. Do some loan categories (such as debt consolidation loans) show better risk-return profile than other categories?
+
+```{r}
+#I'm going to create a dataframe in r with all category labels
+LoanCategory<-c(0:20)
+nameLabels<-c('Not Available', 'Debt Consolidation', 
+          'Home Improvement', 'Business', 'Personal Loan', 
+          'Student Use', 'Auto', 'Other', 'Baby&Adoption', 
+          'Boat', 'Cosmetic Procedure', 'Engagement Ring', 
+          'Green Loans', 'Household Expenses', 
+          'Large Purchases', 'Medical/Dental', 'Motorcycle', 
+          'RV', 'Taxes', 'Vacation', 'Wedding Loans') 
+
+loanCategories<-data.frame(LoanCategory,nameLabels)
+
+#change the name listing category to LoanCategory
+merged<- merged %>% rename(LoanCategory=`ListingCategory (numeric)`) %>%
+    mutate(LoanCategory=as.integer(LoanCategory))
+
+mergedCategory<-merge(merged, loanCategories, by="LoanCategory", all.x=TRUE)
+
+#find the median sharpe for each category label
+summaryLabels<-mergedCategory %>%
+    filter(!is.na(sharpe)) %>%
+    group_by(nameLabels) %>%
+    summarise(sharpe=median(sharpe)) %>%
+    arrange(desc(sharpe))
+
+#arrnage in order of median
+lvl<-c("Baby&Adoption","Wedding Loans","Motorcycle","Household Expenses",
+       "Vacation","Medical/Dental","Taxes","Large Purchases","Engagement Ring",
+       "Cosmetic Procedure","Boat","Green Loans","Home Improvement","RV",
+       "Other", "Auto", "Debt Consolidation", "Business", "Student Use",
+       "Personal Loan", "Not Available")
+#relevel
+mergedCategory$nameLabels<-factor(mergedCategory$nameLabels, levels = lvl)
+
+#plot
+ggplot(data=mergedCategory,aes(x=nameLabels, y=sharpe, fill=nameLabels))+
+    geom_boxplot()+
+    scale_y_continuous(breaks=seq(-5, 5, .5), limits = c(-5,5))+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=.5,hjust=-.25, aes( label=round(..y.., digits=3)))+
+    coord_flip()+
+    theme(legend.position = "none")+
+    ggtitle("Sharpe ratios for each loan category")
+```
+
+The boxplot above indicates that loans that are used for baby&adoption provide the highest Sharpe ratio. Generally, most of the loans provide high Sharpe ratios. Loans that are categorized as Not Available should be avoided.
+
+###4. How does prepayment risk for each loan look like?
+
+```{r}
+merged$Term<-as.factor(merged$Term)
+merged$LoanMonthsSinceOrigination<-as.numeric(merged$LoanMonthsSinceOrigination)
+#find the difference in months between Loan Origination and Loan Close Date
+merged$date_diff <- difftime(merged$ClosedDate ,merged$LoanOriginationDate , units = c("days"))/30
+
+
+p1<-ggplot(data=subset(merged, LoanStatus!="Defaulted"),
+       aes(x=Term, y=date_diff))+
+    geom_violin(fill='grey', width=1.7)+
+    geom_jitter(shape=16, position=position_jitter(0.2), alpha=1/60)+
+    scale_y_continuous(breaks=seq(0, 60, 3))+
+    stat_summary(fun.y=median, geom="point", size=2, color="red")
+
+
+p2<-ggplot(data=subset(merged, LoanStatus!="Defaulted"),aes(x=Term, y=sharpe))+
+    geom_boxplot()+
+    scale_y_continuous(breaks=seq(-5, 5, .5), limits = c(-5,5))+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=-1.5,hjust=-.25, aes( label=round(..y.., digits=2)))+
+    stat_summary(fun.y=mean, color="red", geom="point", 
+               shape=18, size=3,show_guide = FALSE)
+
+grid.arrange(p1,p2, nrow=1)
+```
+
+The left plot indicates that higher maturity loans have higgh pre-payment risk. Borrowers pay those loans in full way before the loans mature. The right plot indicates that Sharpe ratios are generally better for the 60month term loans. 
+
+
+
+###Final plots and summary
+####Plot 1: Estimated vs. Realized Returns
+
+In the figure below I will plot the realized and the estimated monthly returns for the years 2009-2014. The data starts from the period when Prosper restarted its operations, so only a portion of the 2009 year is available.  
+
+```{r}
+
+dataPlot1<-pastLoans %>%
+    select(ListingCreationDate, EstimatedReturn, AnnualizedReturn) %>%
+    filter(!is.na(EstimatedReturn)) %>%
+    gather(ReturnType, Return, EstimatedReturn:AnnualizedReturn) %>%
+    mutate(Return=Return*100)
+    
+
+ggplot(data=dataPlot1, aes(x=as.yearmon(as.Date(ListingCreationDate)),
+                           y=Return, color=ReturnType))+
+    geom_line(stat='summary', fun.y=mean, size=1)+
+    ggtitle("Monthly loan returns (2009-2014)")+
+        labs(y = "Return (%)", x="Loan Creation Date")+
+    scale_x_continuous(limits = c(2009,2014))+
+    theme(axis.title.x = element_text(face="bold", colour="black", size=14),
+          axis.title.y = element_text(face="bold", colour="black", size=14),
+          axis.text.x  = element_text(size=12),
+          axis.text.y  = element_text(size=12),
+          plot.title=element_text(lineheight=.8, face="bold", colour = "black"))+
+    scale_color_discrete(name="Return Type",
+                         breaks=c("AnnualizedReturn", "EstimatedReturn"),
+                         labels=c("Realized Return", "Estimated Return"))
+```
+
+This plot indicates that the realized returns are generally lower than estimated returns. Nonetheless, it also shows that the underwriting protocol has improved over the ears, because the realized and estimate returns are converging (the small dip in realized return for the period before 2014 is because there are a few datapoints in in those months since many loans have not yet matured). 
+
+####Plot 2: Sharpe Ratios For Each Loan Category
+
+```{r}
+ggplot(data=mergedCategory,aes(x=nameLabels, y=sharpe))+
+    geom_boxplot()+
+    scale_y_continuous(breaks=seq(-5, 5, .5), limits = c(-5,5))+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=.5,hjust=-.25, aes( label=round(..y.., digits=2)))+
+    stat_summary(fun.y=mean, color="red", geom="point", 
+               shape=18, size=3,show_guide = FALSE)+
+    coord_flip()+
+    theme(legend.position = "none")+
+    ggtitle("Sharpe ratios for each loan category")+
+    labs(y = "Sharpe Ratio", x="Loan Category")+
+    theme(axis.title.x = element_text(face="bold", colour="black", size=14),
+          axis.title.y = element_text(face="bold", colour="black", size=14),
+          axis.text.x  = element_text(size=12),
+          axis.text.y  = element_text(size=12),
+          plot.title=element_text(lineheight=.8, face="bold", colour = "black"))
+```
+
+The boxplot above shows the Sharpe ratios for each loan category. The red diamonds represent the mean Sharpe ratios. The decimal numbers next to each boxplot also represent the mean Sharpe ratios for each loan category. The boxplots have been ordered from smallest to highest median Sharpe ratio. This plot indicates that there are certain types of loans that an investor should generally avoid. For instance, loans that are not categorized in any of the loan category have negative Sharpe ratios, indicating that an investor is better off investing his money in 1-year Treasury yields. I would recommend that an investor stick to loans that have higher Sharpe ratios. 
+
+####Plot 3: Thinking about pre-payment risk
+
+The plot below contains two panels. The left panel shows how long it took for the loan to be paid off. The loans included in the plot will include loans that have been Completed or  Charged Off. Note that the full payment is broken down by loan term (12months, 36months, and 60months). The red dot represents the median, because the distribution of payments is highly skewed.
+
+The right plot shows the expected Sharpe ratio to be gained by investing in loans with either a 12, 36, or 60 month term. The red diamond represents the mean, since the distribution is not so heavily skewed.The number above each boxplot also represents the mean.
+
+```{r}
+merged$Term<-as.factor(merged$Term)
+merged$LoanMonthsSinceOrigination<-as.numeric(merged$LoanMonthsSinceOrigination)
+
+merged$date_diff <- difftime(merged$ClosedDate ,merged$LoanOriginationDate , units = c("days"))/30
+
+
+p1<-ggplot(data=subset(merged, LoanStatus!="Defaulted"),
+       aes(x=Term, y=date_diff))+
+    geom_violin(fill='grey', width=1.7)+
+    geom_jitter(shape=16, position=position_jitter(0.2), alpha=1/60)+
+    scale_y_continuous(breaks=seq(0, 60, 3))+
+    stat_summary(fun.y=median, geom="point", size=2, color="red")+
+        ggtitle("Examining pre-payment risk for each loan term")+
+    labs(x = "Loan Term (months)", y="Repayment (months)")+
+    theme(axis.title.x = element_text(face="bold", colour="black", size=14),
+          axis.title.y = element_text(face="bold", colour="black", size=14),
+          axis.text.x  = element_text(size=12),
+          axis.text.y  = element_text(size=12),
+          plot.title=element_text(lineheight=.8, face="bold", colour = "black"))
+
+p2<-ggplot(data=subset(merged, LoanStatus!="Defaulted"),aes(x=Term, y=sharpe))+
+    geom_boxplot()+
+    scale_y_continuous(breaks=seq(-5, 5, .5), limits = c(-5,5))+
+    stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
+               vjust=-1.5,hjust=-.25, aes( label=round(..y.., digits=2)))+
+    stat_summary(fun.y=mean, color="red", geom="point", 
+               shape=18, size=3,show_guide = FALSE)+
+        theme(legend.position = "none")+
+    ggtitle("Sharpe ratios for each loan term")+
+    labs(y = "Sharpe Ratio", x="Loan Term (months)")+
+    theme(axis.title.x = element_text(face="bold", colour="black", size=14),
+          axis.title.y = element_text(face="bold", colour="black", size=14),
+          axis.text.x  = element_text(size=12),
+          axis.text.y  = element_text(size=12),
+          plot.title=element_text(lineheight=.8, face="bold", colour = "black"))
+
+grid.arrange(p1,p2, nrow=1)
+```
+
+The left panel indicates that loans with maturity of 36 and 60 months have high repayment risk. Most of the borrowers chose to repay the debt in full before the loan matures. This is a risk for the lender, since he then must seek to reinvest the repaid money into newer loans, which might not be available on the market. Only loans with maturity of 12 months seems to have lower pre-payment risk, since most lenders finish their paying the loan in full close to the maturity date.
+
+The right panel indicates that the best Sharpe ratio can be found in loans with higher maturity (60 months). Nonetheless, these loans also tend to have higher pre-payment risk (they get repaid in median within about 10 months). The suggestion for an investor would be to invest in 60month loans. They offer the best risk-adjusted returns and are relatively similar in pre-payment risk to the 12 month loans.  
+
+###Reflections
+I really enjoyed exploring this dataset. When I approached this project, I tried to narrow my problem by putting myself in the mindset of an investor. In other words, if someone were to invest their money in these loans, what would they want to know? Among many other things, an investor would be interested in the return and risk profile of these loans, so I tried to look at different return and risk measures. I found that estimated returns that are provided by Prosper are generally over-inflated, so I created a realized return metric based on loans that were completed, charged off, or defaulted. 
+
+When I examined the risk profile of the loans, I was not very pleased with the interpretation of the prosper rating and prosper score. I thought that the ordinal scale of their risk does not provide an in depth understanding of the riskiness of these loans. So I spend quite a bit of time figuring out how to create an interval scale. Eventually, I ended up using the Sharpe formula to create the risk-profile for each loan. This measure was not very perfect because it uses the standard deviation of all the loans. I would recommend improving the standard deviation calculation by using something to a moving-average measure. For instance, the denominator of the Sharpe formula could use the standard deviation of the loans within the last 20 months.
+
+Obviously, this dataset allows one to further explore what loan characteristics lead to best risk-adjusted returns. For instance, one could explore the following questions:
+
+* What is the relationship between monthly income and risk-adjusted return measures?
+* Are borrowers who are homeowners providing better risk-adjusted return?
+* Which type of occupations make better borrowers?
+* What is the relationship between number of recommendations and risk-adjusted returns?
+* How does employment status and employment status duration affect risk-adjusted returns?
+* What is the relationship between credit history and risk-adjusted returns?
+
+I have left the exploration of the above questions aside because I felt a bit swamped by the amount of data. I think that in this circumstance, I would rather rely on a machine learning tool for variable selection and then do a sanity check to see if the variables selected by a machine learning algorithm make sense from an economic and financial view.  
