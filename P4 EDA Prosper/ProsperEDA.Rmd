@@ -6,7 +6,9 @@ output: markdowntemplates::bulma
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, cache=TRUE, warning = FALSE, message = FALSE, tidy=TRUE, fig.align = 'center', fig.width = 12, fig.keep='all')
+knitr::opts_chunk$set(echo = FALSE, cache=TRUE, warning = FALSE, 
+                      message = FALSE, tidy=TRUE, fig.align = 'center', 
+                      fig.width = 12, fig.keep='all')
 ```
 
 ## Introduction
@@ -85,10 +87,12 @@ Unfortunately, the dataset indicates that there are 113066 unique keys and numbe
 
 ```{r duplicate}
 #extract the ListingNumber that are duplicates
-Listing_number_duplicated<-prosper$ListingNumber[duplicated(prosper$ListingNumber)]
+Listing_number_duplicated<-prosper$ListingNumber[duplicated
+                                                 (prosper$ListingNumber)]
 
 #create a dataset that extract rows for all duplicate records
-duplicated_rows<-subset(prosper, prosper$ListingNumber %in% Listing_number_duplicated)
+duplicated_rows<-subset(prosper, prosper$ListingNumber %in% 
+                            Listing_number_duplicated)
 
 #View(duplicated_rows)
 
@@ -108,10 +112,12 @@ I noticed that there are several columns in the dataset that specify the date, s
 date_variables<-c("ListingCreationDate","ClosedDate",    "DateCreditPulled","FirstRecordedCreditLine","LoanOriginationDate")
 
 #convert into date format year-month-date hour:minute:second
-p_no_duplicates[,date_variables] <-lapply(p_no_duplicates[,date_variables],ymd_hms)
+p_no_duplicates[,date_variables] <-lapply(p_no_duplicates[,date_variables],
+                                          ymd_hms)
 
 #I will also create a column that will indicate if the data is for pre-2009 or after 2009 based on whether there is a an NA value in the EstimatedEffectiveYield variable. 
-p_no_duplicates$preAfter2009<-ifelse(is.na(p_no_duplicates$EstimatedEffectiveYield)==TRUE,
+p_no_duplicates$preAfter2009<-
+    ifelse(is.na(p_no_duplicates$EstimatedEffectiveYield)==TRUE,
         'pre2009','after2009')
 
 #examine the counts, just to make sure that everything looks good. There shold be 29084 loans before 2009.
@@ -160,18 +166,20 @@ Here is the info about means, medians, and 95%CI for each period. I assume that 
 ```{r}
 p_no_duplicates %>% group_by(preAfter2009) %>%
     summarise(mean=mean(LenderYield),
-              median=median(LenderYield),
-              n=n(),
-              LCI=(mean(LenderYield)-(1.96*sd(LenderYield)/length(LenderYield))),
-              UCI=(mean(LenderYield)+(1.96*sd(LenderYield)/length(LenderYield))))
+            median=median(LenderYield),
+            n=n(),
+            LCI=(mean(LenderYield)-(1.96*sd(LenderYield)/length(LenderYield))),
+            UCI=(mean(LenderYield)+(1.96*sd(LenderYield)/length(LenderYield))))
 ```
 
 Both the boxplot and the descriptive statistics indicate that the median returns are a bit higher for the period after 2009. This suggests that there might be a regime change between the two periods. In the following graphs, I will examine more closely if there is any regime change happening between periods before and after 2009. I will plot the LenderYield variable across time (i.e., for each loan origination date). The plot below will show several levels of granularity for yields.
 
 ```{r, }
 #create colums for day, month, and year of loan origination
-p_no_duplicates$dayOrigination<-ymd(as.Date(p_no_duplicates$LoanOriginationDate))
-p_no_duplicates$monthOrigination<-as.yearmon(as.Date(p_no_duplicates$LoanOriginationDate))
+p_no_duplicates$dayOrigination<-ymd(
+    as.Date(p_no_duplicates$LoanOriginationDate))
+p_no_duplicates$monthOrigination<-as.yearmon(
+    as.Date(p_no_duplicates$LoanOriginationDate))
 p_no_duplicates$yearOrigination<-year(p_no_duplicates$LoanOriginationDate)
                            
 #plot the yield at the most granular, individual loan creation date scale
@@ -182,7 +190,8 @@ p1<-ggplot(data=p_no_duplicates, aes(x=ListingCreationDate, y=LenderYield))+
 
 
 #plot the yield on a daily scale
-p2<-ggplot(data=p_no_duplicates, aes(x=ymd(as.Date(ListingCreationDate)), y=LenderYield))+
+p2<-ggplot(data=p_no_duplicates, aes(x=ymd(as.Date(ListingCreationDate)), 
+                                     y=LenderYield))+
     geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean)+
     ggtitle("Daily loan yields")
 
@@ -192,7 +201,8 @@ p3<-ggplot(data=p_no_duplicates, aes(x=as.yearmon(as.Date(ListingCreationDate)),
     ggtitle("Monthly loan yields")
 
 #plot the yield on a yearly scale
-p4<-ggplot(data=p_no_duplicates, aes(x=year(ListingCreationDate), y=LenderYield))+
+p4<-ggplot(data=p_no_duplicates, aes(x=year(ListingCreationDate), 
+                                     y=LenderYield))+
     geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean)+
     ggtitle("Yearly loan yields")
 
@@ -219,7 +229,8 @@ Note that EstimatedReturn variable is provided only for loans after 2009. The bl
 p_no_duplicates$EstimatedReturn<-as.numeric(p_no_duplicates$EstimatedReturn)
  
 #create a variable for year listing creation date
-p_no_duplicates$ListCreationYear<-as.factor(year(p_no_duplicates$ListingCreationDate))
+p_no_duplicates$ListCreationYear<-as.factor(year
+                                (p_no_duplicates$ListingCreationDate))
 
 Returns<-p_no_duplicates %>% filter(!is.na(EstimatedReturn))
 
@@ -248,8 +259,10 @@ year_returns<-p_no_duplicates %>%
      summarise(meanReturn=mean(EstimatedReturn),
             median=median(EstimatedReturn),
             n=n(),
-            LCI=(mean(EstimatedReturn)-(1.96*sd(EstimatedReturn)/length(EstimatedReturn))),
-            UCI=(mean(EstimatedReturn)+(1.96*sd(EstimatedReturn)/length(EstimatedReturn))))
+            LCI=(mean(EstimatedReturn)-(1.96*sd(EstimatedReturn)/
+                                            length(EstimatedReturn))),
+            UCI=(mean(EstimatedReturn)+(1.96*sd(EstimatedReturn)/
+                                            length(EstimatedReturn))))
 ```
 
 It seems like the mean and median returns have decreased as across time despite the fact that the increase in the number of loan listings, indicating that the underwriting process has become more efficient at weeding out risky loans.   
@@ -267,8 +280,10 @@ ggplot(Returns, aes(ListCreationYear, EstimatedReturn)) +
     geom_boxplot(aes(fill = ListCreationYear))+
     theme(legend.position = "none")+
     scale_y_continuous(breaks=seq(-.2, .3, .05))+
-    geom_point(color=ifelse(Returns$EstimatedReturn<=quantile(Returns$EstimatedReturn,.05),
-                    ifelse(Returns$EstimatedReturn<=quantile(Returns$EstimatedReturn, .01),
+    geom_point(color=ifelse(Returns$EstimatedReturn<=
+                                quantile(Returns$EstimatedReturn,.05),
+                    ifelse(Returns$EstimatedReturn<=
+                               quantile(Returns$EstimatedReturn, .01),
                            "red", "orange"),"black"))+
     ggtitle("Loans within 1% (RED) and 5% VAR (YELLOW & RED)")
 
@@ -298,8 +313,9 @@ $$r_a=(1+r_c)^{12/LoanMonthsSinceOrigination} $$
 
 ```{r returnCalculations}
 #convert these colums to numeric
-numColums<- c("LoanMonthsSinceOrigination","LoanOriginalAmount","LP_CustomerPayments",
-              "LP_CustomerPrincipalPayments","LP_InterestandFees","LP_ServiceFees",
+numColums<- c("LoanMonthsSinceOrigination","LoanOriginalAmount",
+              "LP_CustomerPayments","LP_CustomerPrincipalPayments",
+              "LP_InterestandFees","LP_ServiceFees",
               "LP_CollectionFees","LP_GrossPrincipalLoss","LP_NetPrincipalLoss",
               "LP_NonPrincipalRecoverypayments","PercentFunded")
 
@@ -308,14 +324,17 @@ p_no_duplicates[numColums] <- sapply(p_no_duplicates[numColums],as.numeric)
 
 #find the returns for completed loans
 completed<-p_no_duplicates %>% filter(LoanStatus=="Completed") %>%
-    mutate(cumulativeReturn=(LP_CustomerPayments-LoanOriginalAmount+LP_ServiceFees)/LoanOriginalAmount) %>%
-    mutate(AnnualizedReturn=((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
+    mutate(cumulativeReturn=(LP_CustomerPayments-LoanOriginalAmount+
+                                 LP_ServiceFees)/LoanOriginalAmount) %>%
+    mutate(AnnualizedReturn=
+               ((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
 
 
 #find the returns for charge offs and defaults; I calculate the return as follows
 chargeoff<-p_no_duplicates %>% 
     filter(LoanStatus=="Chargedoff" | LoanStatus=="Defaulted") %>%
-    mutate(cumulativeReturn=(LP_CustomerPayments+LP_NonPrincipalRecoverypayments+LP_ServiceFees+LP_CollectionFees-(LoanOriginalAmount-LP_NetPrincipalLoss))/LoanOriginalAmount) %>%
+    mutate(cumulativeReturn=(LP_CustomerPayments+ LP_NonPrincipalRecoverypayments+    LP_ServiceFees+LP_CollectionFees-
+    (LoanOriginalAmount-LP_NetPrincipalLoss)) /LoanOriginalAmount) %>%
     mutate(AnnualizedReturn=((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
 
 pastLoans<-rbind(completed, chargeoff)
@@ -331,7 +350,8 @@ Below, I will plot the annualized returns for each year. The mean annualized ret
 ggplot(pastLoans, aes(ListCreationYear, AnnualizedReturn)) + 
     geom_boxplot(aes(fill = ListCreationYear))+
     theme(legend.position = "none")+
-    ggtitle("Actual Returns from Past Loans (Includes Completed, Charged Off, and Defaults)")+
+    ggtitle("Actual Returns from Past Loans 
+            (Includes Completed, Charged Off, and Defaults)")+
     stat_summary(fun.y=mean, color="black", geom="point", 
                shape=18, size=3,show_guide = FALSE)+
     stat_summary(fun.y=mean, colour="black", geom="text", show_guide = FALSE, 
@@ -382,11 +402,15 @@ loanTypeStats<-pastLoans %>% filter(!is.na(AnnualizedReturn)) %>%
     summarise(mean=mean(AnnualizedReturn),
     median=median(AnnualizedReturn),
     n=n(),
-    LCI=(mean(AnnualizedReturn)-(1.96*sd(AnnualizedReturn)/length(AnnualizedReturn))),
-    UCI=(mean(AnnualizedReturn)+(1.96*sd(AnnualizedReturn)/length(AnnualizedReturn))))
+    LCI=(mean(AnnualizedReturn)-(1.96*sd(AnnualizedReturn)/
+                                     length(AnnualizedReturn))),
+    UCI=(mean(AnnualizedReturn)+(1.96*sd(AnnualizedReturn)/
+                                     length(AnnualizedReturn))))
 
-a<-pastLoans %>% select(LP_CustomerPayments,LP_CustomerPrincipalPayments,LP_InterestandFees) %>%
-    mutate(total=(LP_CustomerPrincipalPayments+LP_InterestandFees)-LP_CustomerPayments)
+a<-pastLoans %>% select(LP_CustomerPayments,LP_CustomerPrincipalPayments,
+                        LP_InterestandFees) %>%
+    mutate(total=(LP_CustomerPrincipalPayments+LP_InterestandFees)-
+               LP_CustomerPayments)
 
 loanTypeStats
 ```
@@ -457,7 +481,8 @@ p2<-ggplot(subset(pastLoans,!is.na(EstimatedReturn)), aes(x=ProsperScore, y=Esti
     ggtitle("Estimated Returns for Each Prosper Score")
 
 
-p3<-ggplot(data=subset(pastLoans,!is.na(EstimatedReturn)), aes(x=ProsperScore))+
+p3<-ggplot(data=subset(pastLoans,!is.na(EstimatedReturn)), 
+           aes(x=ProsperScore))+
     geom_bar(stat="count")+
     theme(legend.position = "none")+
     ggtitle("# Loans for each prosper score")
@@ -469,14 +494,16 @@ The graphs above should show that with lower risk (i.e., higher prosper score), 
 
 ```{r}
 cor.test(pastLoans$AnnualizedReturn,
-         as.integer(pastLoans$ProsperScore),method="spearman",conf.level = 0.95)
+         as.integer(pastLoans$ProsperScore),method="spearman",
+         conf.level = 0.95)
 ```
 
 The correlation test between prosper score and annualized return is significant, but it's important to point out that that significance doesn't imply a sign of a strong relationship because we have thousands of observations.Next, I'll examine the relationship between prosper score and estimated return.
 
 ```{r}
 cor.test(pastLoans$EstimatedReturn, 
-         as.integer(pastLoans$ProsperScore),method="spearman", conf.level = 0.95)
+         as.integer(pastLoans$ProsperScore),method="spearman", 
+         conf.level = 0.95)
 ```
 
 It seems like there is a similar relationship between prosper score and annualized return rather than between prosper score and estimated return. 
@@ -485,7 +512,8 @@ I'm not very satisfied with the relationship between prosper score and the two m
 > ProsperRating (numeric)	The  Prosper Rating assigned at the time the listing was created: 0 - N/A, 1 - HR, 2 - E, 3 - D, 4 - C, 5 - B, 6 - A, 7 - AA.  Applicable for loans originated after July 2009.
 
 ```{r}
-p1<-ggplot(subset(pastLoans,!is.na(EstimatedReturn)), aes(x=`ProsperRating (numeric)`, y=AnnualizedReturn))+ 
+p1<-ggplot(subset(pastLoans,!is.na(EstimatedReturn)), 
+           aes(x=`ProsperRating (numeric)`, y=AnnualizedReturn))+ 
     geom_boxplot()+
     theme(legend.position = "none")+
     scale_y_continuous(breaks=seq(-1, .3, .05))+
@@ -527,9 +555,11 @@ In this section, I will examine the ratio between annualized return and prosper 
 
 ```{r}
 #create annualizedRRatio
-pastLoans$annualizedRRatio<-pastLoans$AnnualizedReturn/as.numeric(pastLoans$`ProsperRating (numeric)`)
+pastLoans$annualizedRRatio<-pastLoans$AnnualizedReturn/
+    as.numeric(pastLoans$`ProsperRating (numeric)`)
 #create estimatedRRatio
-pastLoans$estimatedRRatio<-pastLoans$EstimatedReturn/as.numeric(pastLoans$`ProsperRating (numeric)`)
+pastLoans$estimatedRRatio<-pastLoans$EstimatedReturn/
+    as.numeric(pastLoans$`ProsperRating (numeric)`)
 
 pastLoans %>% group_by(`ProsperRating (numeric)`) %>%
     summarise(meanRealized=mean(annualizedRRatio, na.rm=TRUE),
@@ -570,7 +600,8 @@ First, I will download the daily 1-year US treasury yield curve rates using Quan
 
 ```{r}
 #load  yields from Quandl
-treasuryRates<-Quandl("USTREASURY/YIELD", trim_start="2005-01-01", trim_end="2015-01-01")
+treasuryRates<-Quandl("USTREASURY/YIELD", trim_start="2005-01-01", 
+                      trim_end="2015-01-01")
 treasuryRatesDaily<-treasuryRates %>% select(Date, `1 YR`) %>%
     rename(dayOrigination=Date) 
 
@@ -629,7 +660,8 @@ noMissing<-subset(merged, !is.na(DebtToIncomeRatio))
     
 ggplot(data=noMissing, aes(x=sqrt(DebtToIncomeRatio)))+
            geom_histogram()+
-    scale_x_continuous(limits = c(0, quantile(noMissing$DebtToIncomeRatio,.99)))+
+    scale_x_continuous(limits = 
+                           c(0, quantile(noMissing$DebtToIncomeRatio,.99)))+
     ggtitle("Transformed and with top 1% outliers removed")
 ```
 
@@ -639,7 +671,8 @@ I used the sqrt transformation and removed top 1% of outliers. The transformed d
 ggplot(data=noMissing, aes(x=sqrt(DebtToIncomeRatio), y=sharpe))+
     geom_point(alpha=.01)+
     geom_smooth(method="lm")+
-    scale_x_continuous(limits = c(0, quantile(noMissing$DebtToIncomeRatio,.99)))+
+    scale_x_continuous(limits = 
+                           c(0, quantile(noMissing$DebtToIncomeRatio,.99)))+
     scale_y_continuous(limits = c(-1, 6))+
     ggtitle("Relationship between Sharpe and debt-to-income ratio")
 ```
@@ -717,7 +750,8 @@ The boxplot above indicates that loans that are used for baby&adoption provide t
 merged$Term<-as.factor(merged$Term)
 merged$LoanMonthsSinceOrigination<-as.numeric(merged$LoanMonthsSinceOrigination)
 #find the difference in months between Loan Origination and Loan Close Date
-merged$date_diff <- difftime(merged$ClosedDate ,merged$LoanOriginationDate , units = c("days"))/30
+merged$date_diff <- difftime(merged$ClosedDate ,merged$LoanOriginationDate , 
+                             units = c("days"))/30
 
 
 p1<-ggplot(data=subset(merged, LoanStatus!="Defaulted"),
@@ -808,7 +842,8 @@ The right plot shows the expected Sharpe ratio to be gained by investing in loan
 merged$Term<-as.factor(merged$Term)
 merged$LoanMonthsSinceOrigination<-as.numeric(merged$LoanMonthsSinceOrigination)
 
-merged$date_diff <- difftime(merged$ClosedDate ,merged$LoanOriginationDate , units = c("days"))/30
+merged$date_diff <- difftime(merged$ClosedDate ,merged$LoanOriginationDate, 
+                             units = c("days"))/30
 
 
 p1<-ggplot(data=subset(merged, LoanStatus!="Defaulted"),
