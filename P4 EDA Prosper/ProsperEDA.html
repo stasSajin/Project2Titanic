@@ -138,7 +138,7 @@ p_no_duplicates[, date_variables] &lt;- lapply(p_no_duplicates[, date_variables]
 p_no_duplicates$preAfter2009 &lt;- ifelse(is.na(p_no_duplicates$EstimatedEffectiveYield) == 
     TRUE, &quot;pre2009&quot;, &quot;after2009&quot;)
 
-# examine the counts, just to make sure that everything looks good. There
+# examine the counts, just to make sure that everything looks good.  There
 # shold be 29084 loans before 2009.
 table(p_no_duplicates$preAfter2009)</code></pre>
 <pre><code>## 

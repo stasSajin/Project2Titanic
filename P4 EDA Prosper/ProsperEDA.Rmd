@@ -100,7 +100,8 @@ duplicated_rows<-subset(prosper, prosper$ListingNumber %in%
 #remove dulpicated rows
 p_no_duplicates<-prosper[!duplicated(prosper$ListingNumber),]
 
-#remove prosper and duplicated_rows dfs from global environment so as to not hog memory
+#remove prosper and duplicated_rows dfs from global environment so as to not 
+#hog memory
 rm(duplicated_rows)
 rm(prosper)
 ```
@@ -115,12 +116,15 @@ date_variables<-c("ListingCreationDate","ClosedDate",    "DateCreditPulled","Fir
 p_no_duplicates[,date_variables] <-lapply(p_no_duplicates[,date_variables],
                                           ymd_hms)
 
-#I will also create a column that will indicate if the data is for pre-2009 or after 2009 based on whether there is a an NA value in the EstimatedEffectiveYield variable. 
+#I will also create a column that will indicate if the data is for pre-2009 or 
+#after 2009 based on whether there is a an NA value in the 
+#EstimatedEffectiveYield variable. 
 p_no_duplicates$preAfter2009<-
     ifelse(is.na(p_no_duplicates$EstimatedEffectiveYield)==TRUE,
         'pre2009','after2009')
 
-#examine the counts, just to make sure that everything looks good. There shold be 29084 loans before 2009.
+#examine the counts, just to make sure that everything looks good. 
+#There shold be 29084 loans before 2009.
 table(p_no_duplicates$preAfter2009)
 ```
 
@@ -330,19 +334,24 @@ completed<-p_no_duplicates %>% filter(LoanStatus=="Completed") %>%
                ((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
 
 
-#find the returns for charge offs and defaults; I calculate the return as follows
+#find the returns for charge offs and defaults; I calculate the return as 
+#follows
 chargeoff<-p_no_duplicates %>% 
     filter(LoanStatus=="Chargedoff" | LoanStatus=="Defaulted") %>%
-    mutate(cumulativeReturn=(LP_CustomerPayments+ LP_NonPrincipalRecoverypayments+    LP_ServiceFees+LP_CollectionFees-
+    mutate(cumulativeReturn=(LP_CustomerPayments+ 
+            LP_NonPrincipalRecoverypayments+LP_ServiceFees+LP_CollectionFees-
     (LoanOriginalAmount-LP_NetPrincipalLoss)) /LoanOriginalAmount) %>%
-    mutate(AnnualizedReturn=((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
+    mutate(AnnualizedReturn=
+            ((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
 
 pastLoans<-rbind(completed, chargeoff)
 
 #examine the dataframes 
-# a<-completed %>% select(LoanMonthsSinceOrigination, EstimatedReturn, cumulativeReturn, yearlyReturn)
+# a<-completed %>% select(LoanMonthsSinceOrigination, EstimatedReturn, 
+#cumulativeReturn, yearlyReturn)
 # 
-# b<-chargeoff %>% select(BorrowerAPR,LoanMonthsSinceOrigination, EstimatedReturn, cumulativeReturn, yearlyReturn)
+# b<-chargeoff %>% select(BorrowerAPR,LoanMonthsSinceOrigination, 
+#EstimatedReturn, cumulativeReturn, yearlyReturn)
 ```
 
 Below, I will plot the annualized returns for each year. The mean annualized return is provided slightly above the boxplot in the graph.
@@ -463,7 +472,8 @@ In the figure below, I plot in the top two panels the annualized returns (which 
 
 ```{r}
 p_no_duplicates$`ProsperRating (numeric)`<-as.factor(as.integer(p_no_duplicates$`ProsperRating (numeric)`))
-pastLoans$`ProsperRating (numeric)`<-as.factor(as.integer(pastLoans$`ProsperRating (numeric)`))
+pastLoans$`ProsperRating (numeric)`<-as.factor(
+    as.integer(pastLoans$`ProsperRating (numeric)`))
 
 p_no_duplicates$ProsperScore<-as.factor(as.integer(p_no_duplicates$ProsperScore))
 pastLoans$ProsperScore<-as.factor(as.integer(pastLoans$ProsperScore))
@@ -608,10 +618,12 @@ treasuryRatesDaily<-treasuryRates %>% select(Date, `1 YR`) %>%
 #change dayOrigination to date
 pastLoans$dayOrigination<-as.Date(pastLoans$dayOrigination) 
 
-###combine the dataframes pastLoans and treasuryRatesDaily based on dayOriginationColumn
+###combine the dataframes pastLoans and treasuryRatesDaily based on 
+#dayOriginationColumn
 merged<-left_join(pastLoans, treasuryRatesDaily, by="dayOrigination")
 
-#calculate the sharpe ratio for each loan; note that I divided the treasury yield by 100 to convert it into proportion.
+#calculate the sharpe ratio for each loan; note that I divided the treasury 
+#yield by 100 to convert it into proportion.
 merged<-merged %>% filter(!is.na(AnnualizedReturn)) %>%
     mutate(sharpe=(AnnualizedReturn-((`1 YR`)/100))/sd(AnnualizedReturn))
 ```
@@ -774,7 +786,6 @@ grid.arrange(p1,p2, nrow=1)
 ```
 
 The left plot indicates that higher maturity loans have higgh pre-payment risk. Borrowers pay those loans in full way before the loans mature. The right plot indicates that Sharpe ratios are generally better for the 60month term loans. 
-
 
 
 ###Final plots and summary
