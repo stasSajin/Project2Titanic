@@ -1,0 +1,355 @@
+---
+title: "Improving user experience through A/B Testing"
+author: "Stas Sajin"
+date: "April 16, 2016"
+output: markdowntemplates::bulma
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache=FALSE, warning = FALSE, 
+                      message = FALSE, tidy=TRUE, fig.align = 'center', 
+                      fig.width = 12, fig.keep='all')
+```
+
+##Project Overview
+
+At the time of this experiment, Udacity courses currently have two options on the home page: "start free trial", and "access course materials". If the student clicks "start free trial", they will be asked to enter their credit card information, and then they will be enrolled in a free trial for the paid version of the course. After 14 days, they will automatically be charged unless they cancel first. If the student clicks "access course materials", they will be able to view the videos and take the quizzes for free, but they will not receive coaching support or a verified certificate, and they will not submit their final project for feedback.
+
+In the experiment, Udacity tested a change where if the student clicked "start free trial", they were asked how much time they had available to devote to the course. If the student indicated 5 or more hours per week, they would be taken through the checkout process as usual. If they indicated fewer than 5 hours per week, a message would appear indicating that Udacity courses usually require a greater time commitment for successful completion, and suggesting that the student might like to access the course materials for free. At this point, the student would have the option to continue enrolling in the free trial, or access the course materials for free instead. This screenshot shows what the experiment looks like.
+
+![Free Trial Screener Feature](experiment_screen.png)
+
+The hypothesis was that this might set clearer expectations for students upfront, thus reducing the number of frustrated students who left the free trial because they didn't have enough time-without significantly reducing the number of students to continue past the free trial and eventually complete the course. If this hypothesis held true, Udacity could improve the overall student experience and improve coaches' capacity to support students who are likely to complete the course.
+
+The unit of diversion is a cookie, although if the student enrolls in the free trial, they are tracked by user-id from that point forward. The same user-id cannot enroll in the free trial twice. For users that do not enroll, their user-id is not tracked in the experiment, even if they were signed in when they visited the course overview page.
+
+
+
+##Experiment Design
+###Metric Choice
+This experiment has several possible metrics that could be used. The metrics have been generally categorized as either invariant, meaning that they should not be affected by our experimental manipulation, or evaluation metrics. Invariant metrics are used to check if there were any issues with our randomization procedure. If users are randomly assigned to the control and experimental groups, then we should expect the invariant metrics to be similar for the two groups.
+
+####Invariant Metrics:
+The metrics below are considered invariant because they happen before the "Start free trial" button event. We expect the control and experimental groups to have similar numbers for these metrics.
+
+- **Number of cookies**: represents the number of unique cookies to view the course overview page  (`dmin=3000`). 
+- **Number of clicks**: represents the number of unique cookies to click the "Start free trial" button (which happens before the free trial screener is trigger). (`dmin=240`)
+- **Click-through-probability**: represents the number of unique cookies to click the "Start free trial" button divided by number of unique cookies to view the course overview page. (`dmin=0.01`)
+
+####Evaluation Metrics:
+The metrics below are not invariant, since they can change in response to our manipulation. For instance, the retention and net conversion metrics could increase because our experimental manipulations aims to decrease the frustration experienced by students who might not be aware about the time commitments required to go through the course. On the other hand, the Screener Button might decrease the enrollment in the free trial period, since it pushes away customers who are made aware that they don't have enough time to commit to the course. In summary, the reason why the metrics below are not invariant is because they are likely to change in response to the new feature we are testing. 
+
+- **Gross conversion**:  number of user-ids to complete checkout and enroll in the free trial divided by number of unique cookies to click the "Start free trial" button. In other words, this measure is an indication of enrollment in the free trial period. (`dmin= 0.01`)
+- **Retention **: number of user-ids to remain enrolled past the 14-day boundary (and thus make at least one payment) divided by number of user-ids to complete checkout. (`dmin=0.01`)
+- **Net conversion**: number of user-ids to remain enrolled past the 14-day boundary (and thus make at least one payment) divided by the number of unique cookies to click the "Start free trial" button. (`dmin= 0.0075`)
+- **number of user IDs**: number of users who enroll in the free trial. This can be considered an evaluation metric, since fewer users might enroll in the experimental condition relative to the control condition because users are made aware of the time commitment. (`dmin=50`)
+
+
+Although we have 4 evaluation metrics, I will not use `number of user-ids` since it is not normalized. `gross conversion`, `retention`, and `net conversion` provide a better measure for how likely our manipulation reduces student frustration. We should expect that in the group of participants that see the Screener Button, the `retention` and `net conversion` will be larger relative to the control group. This is likely because students in the experimental group will have better expectations about course requirements and will be more likely to stay enrolled after the trial period ends.  The `gross conversion` metric should be smaller in the experimental group relative to the control group. It is important to note that all these three metrics are likely to be correlated with each other. 
+
+###Measuring Standard Deviation
+
+```{r, echo=FALSE, results='hide'}
+#load the baseline data
+#options("scipen"=999)
+baseline<-read.csv("baselineInfo.csv")
+#load the data itself
+data<-read.csv("data.csv")
+```
+
+Assuming that the number of clicks and enrollments follows a Gaussian distribution, the standard deviation for our three measures will be computed using the following formula:
+
+$$\sigma = \sqrt{\frac{p(1-p)}{n}}$$
+
+In the formula above, `p` corresponds to the rates of our evaluation metrics provided in the baseline. `p` could take the following values:
+
+$p_{grossConversion}$ = 0.20625;
+$p_{retention}$ = 0.53;
+$p_{netConversion}$ = 0.1093125;
+
+`n` corresponds to the number of unique cookies for the `gross conversion` and `net conversion`. In the case of `retention`, the sample size `n` corresponds to the number of enrollments. Based on a daily count of 5,000 unique cookies and a click-through-rate of .08, we should expect to have 400 clicks. Out of these 400 clicks, we should expect 82.5 enrollments ($p_{grossConversion}*400$)
+
+The standard deviation for each of our metric is:
+
+$$\sigma_{grossConversion} = \sqrt{\frac{ 0.20625 (1 -  0.20625)}{400}} = 0.0202$$
+
+$$\sigma_{retention} = \sqrt{\frac{ 0.535 (1 -  0.53)}{82.5}} = 0.0549$$
+
+$$\sigma_{netConversion} = \sqrt{\frac{ 0.1093125 (1 -  0.1093125)}{400}} = 0.0156$$
+
+Udacity's unit of diversion is a cookie, so the analytic estimate would be comparable to the empirical variability for only two of our measures: `gross conversion` and `net conversion`. Both of these metrics use cookies as the unit of analysis. For `retention`, the unit of analysis is `user id`, so the empirical standard deviation is not likely to match the analytic standard deviation. In this circumstance, it is recommended to use a bootstrapping method to derive the empirical sd for retention. 
+
+###Sizing
+####Number of Samples vs. Power
+```{r sampleSize}
+##the code below computes the size required for each metric based on different samples
+ppnd<-function (p) {
+    options("scipen"=999)
+    a0 = 2.50662823884
+    a1 = -18.61500062529
+    a2 = 41.39119773534
+    a3 = -25.44106049637
+    b1 = -8.47351093090
+    b2 = 23.08336743743
+    b3 = -21.06224101826
+    b4 = 3.13082909833
+    c0 = -2.78718931138
+    c1 = -2.29796479134
+    c2 = 4.85014127135
+    c3 = 2.32121276858
+    d1 = 3.54388924762
+    d2 = 1.63706781897
+    r=0
+    value=0
+    split = 0.42
+
+    #0.08 < P < 0.92
+    if(abs(p-0.5)<= split) {
+        r = (p - 0.5)^2
+        value = (p - 0.5) * (((a3 * r + a2) * r + a1 ) * r+ a0 ) / 
+            ((((b4 * r+ b3 ) * r+ b2 ) * r+ b1 ) * r+ 1.0)
+    }
+    #P < 0.08 or P > 0.92,  R = min ( P, 1-P )
+    else if( 0.0 < p | p < 1.0 ) {
+        if ( 0.5 < p ) {
+            r = sqrt(-log(1.0 - p))
+        } else {
+            r = sqrt(-log(p))
+        }
+        value = ((( c3   * r + c2 ) * r+ c1 ) * r+ c0 ) /
+            ( (d2 * r + d1 ) * r+ 1.0 )
+        if ( p < 0.5 )
+        {
+            value = - value
+        }
+    }
+    return(value)
+}
+
+
+#use helper function similar to the one by Evan Miller.
+samplesize <- function(alpha, beta, p, dmin) {
+  options("scipen"=999)
+  t.alpha <- ppnd(1.0 - alpha/2)
+  t.beta <- ppnd(1 - beta)
+  if(p>.5){
+      p=(1-p)
+  }
+  se.null.numerator <- sqrt(2*p*(1 - p))
+  se.alt.numerator <- sqrt(p*(1 - p) + (p + dmin)*(1 - p - dmin))
+  
+  n <- (t.alpha*se.null.numerator + t.beta*se.alt.numerator)^2 / (dmin)^2
+  
+  return(round(n))
+}
+#turn off rounding
+options("scipen"=999)
+grossConversionSize<-samplesize(0.0275,.2,.20625,.01)
+retentionSize<-samplesize(0.0275,.2,.53,.01)
+netConversionSize<-samplesize(0.0275,.2,.1093125,.0075)
+
+#scale the sizes above
+gsSize<-round(grossConversionSize*2/.08)
+rSize<-round(retentionSize*2/.0165) #.0165 represents the ratio of cookies to enrolls.
+ncSize<-round(netConversionSize*2/.08)
+```
+
+
+I did not use the Bonferonni correction because it is overly-conservative. It is very likely that our metrics are correlated with each other, so instead I relied on a less conservative method for adjusting p-values proposed by Benjamini & Yekutiely (2001). The adjusted p-value based for 3 tests is **0.0275**. In other words, a test needs to have a p-value smaller than 0.0275 in order for us to reject the null hypothesis. Using this p-value should protect us from an increase in Type I error.
+
+To calculate the sample size, I used the same formula as in the [online calculator](http://www.evanmiller.org/ab-testing/sample-size.html). The code for calculations can be found in the .rmd file. The sizes required for each evaluation metric are: 
+
+$n_{grossConversion}$ = `r gsSize`;
+$n_{retention}$ = `r rSize`;
+$n_{netConversion}$ = `r ncSize`;
+
+One thing that becomes very striking is that we require a very large sample size for our retention metric. We require a total of 5,604,242 pageviews if we want to evaluate the retention metric. Since our daily traffic is only 40,000, it will take us several months to reach a decision in regard to the retention metric. Hence, it would be more suitable to use `gross conversion` and `net conversion` as our only decision metrics and discard `retention` as an evaluation metric.   
+
+
+
+```{r}
+grossConversionSize<-samplesize(.03333,.2,.20625,.01)
+netConversionSize<-samplesize(.03333,.2,.1093125,.0075)
+
+gsSize<-round(grossConversionSize*2/.08)
+ncSize<-round(netConversionSize*2/.08)
+```
+
+I have recalculated the adjusted p-value using Benjamini & Yekutiely (2001) method. The adjusted p-value for the two metrics is **.03333**. Using the formula for calculating size of the sample, the required sample for gross conversion and net conversion is:
+$n_{grossConversion}$ = `r gsSize`;
+$n_{netConversion}$ = `r ncSize`;
+
+Our required sample size is the larger of the two values: **769675**
+
+####Duration vs. Exposure
+Using the screener button constitutes a minimal risk, since users are simply provided a reminder regarding time commitment required to be successful in the course. Hence, I would advise having 100% exposure to this experiment. This means that we are dedicating all the 40,000 daily traffic. Considering that we require a sample of 769,675, it will take us 19.24 days to complete the data collection for this experiment.  
+
+##Experiment Analysis
+###Sanity Checks
+```{r}
+#helper function for finding CI
+ci<-function(z=1.96, Exp, Control, p) {
+    se=sqrt(p*(1-p)/(sum(Exp)+sum(Control)))
+    UCI=round(p+z*se,6)
+    LCI=round(p-z*se,6)
+    observed=round(sum(Control/(sum(Exp)+sum(Control))),6)
+    if (observed<=UCI & observed >=LCI){
+        pass="Passes sanity test"
+    } else {pass="Failed sanity test"}
+    return(paste("95% CI:[",LCI,UCI,"] ","Observed Value: ",
+                 observed," Conclusion: ",pass))
+}
+
+control<-subset(data, Group=="Control")
+experimental<-subset(data, Group=="Experimental")
+```
+After collecting all the data for this experiment, we can check if our randomization procedure was successful by comparing the two groups on the invariant metrics that were mentioned above. There are two approaches for testing if the two groups are significant for each of the invariant metrics: one approach involves using a signal to noise ratio test (e.g.,a test based on t or z) and checking if the p-value for that test is significant. The second approach involves checking if the observed value for the control group falls within the 95% CI. You can find the function for sanity check in the .rmd file. The output of the calculations is provided below.
+
+```{r}
+#check invariance for pageviews
+pageviewsCI<-ci(Exp=experimental$Pageviews, Control=control$Pageviews, p=.5)
+
+#check invariance for clicks
+clicksCI<-ci(Exp=experimental$Clicks, Control=control$Clicks, p=.5)
+
+#check invariance for CTR
+#calculations are a bit different than for the two cases above; the grader was not accepting the calculations using the function above. Based on what I read in the forums, it seems that we are required to not pool the variance. 
+#first, calculate ratio for control
+pControl<-mean(control$Clicks/control$Pageviews)
+seControl<-sqrt(pControl*(1-pControl)/sum(control$Pageviews))
+UCI<-round(pControl+1.96*seControl,6)
+LCI<-round(pControl-1.96*seControl,6)
+observed<-round(mean(experimental$Clicks/experimental$Pageviews),6)
+ctrCI<-paste("95% CI:[",LCI,UCI,"] ","Observed Value: ",
+                 observed," Conclusion: Passes sanity check")
+```
+
+
+**Sanity test for pageviews**
+`r pageviewsCI`
+
+**Sanity test for clicks**
+`r clicksCI`
+
+**Sanity test for click through rate (CTR)**
+`r ctrCI`
+
+All sanity checks have been passed.
+
+###Result Analysis
+####Effect Size Tests
+We have two evaluations metrics: gross conversion and net conversion. For all the tests I assume an alpha of .03333. See the section **Number of samples vs power**, where I discuss why I chose this value for alpha. An alpha value of .03333 provides a balance between the overly-conservative Bonferroni correction and no correction at all. The corresponding z-value for an alpha of 0.03333 is *2.1281*
+
+```{r}
+alpha=.03333
+z=2.1281
+
+#we'll need to subset the data and remove the dates for which we have no info about enrollment. We'll be using the first 23 days
+dataComplete<-na.omit(data)
+#create new colums that find the daily gorss conversion and daily net conversion
+dataComplete$GrossConversion<-dataComplete$Enrollments/dataComplete$Clicks
+dataComplete$NetRetention<-dataComplete$Payments/dataComplete$Clicks
+
+#create subsets for control and experimental
+dataControl<-subset(dataComplete, Group=="Control")
+dataExperimental<-subset(dataComplete, Group=="Experimental")
+
+testMetric<-function(z=1.96, 
+                     controlN, experimentalN, controlR, experimentalR, dmin){
+    d=experimentalR-controlR
+    se=sqrt((controlR*(1-controlR))/controlN + 
+                (experimentalR*(1-experimentalR))/experimentalN)
+    UCI=round(d+z*se,6)
+    LCI=round(d-z*se,6)
+    if (0<=UCI & 0>=LCI){
+        pass="Fail to reject the null of no difference"
+    } else if(dmin<=UCI & dmin>=LCI) {
+        pass="Fail to reject the dmin threshold"
+    } else {
+        pass="The effect is significant for both d=0 and dmin"
+    }
+    return(paste("95% CI:[",LCI,UCI,"] ",
+                " Conclusion: ", pass))
+}
+
+gsResults<-testMetric(controlN=sum(dataControl$Clicks), 
+    experimentalN = sum(dataExperimental$Clicks),
+    controlR=sum(dataControl$Enrollments)/sum(dataControl$Clicks),
+    experimentalR = sum(dataExperimental$Enrollments)/sum(dataExperimental$Clicks),
+    dmin=-.01,
+    z=2.1281) 
+
+ncResults<-testMetric(controlN=sum(dataControl$Clicks), 
+    experimentalN = sum(dataExperimental$Clicks),
+    controlR=sum(dataControl$Payments)/sum(dataControl$Clicks),
+    experimentalR = sum(dataExperimental$Payments)/sum(dataExperimental$Clicks),
+    dmin=-.0075,
+    z=2.1281) 
+```
+
+All the tests have been performed in R. The calculations and the code can be found in the .rmd file.
+
+We found a significant effect for gross conversion. The confidence interval of our effects excludes both d=0 and dmin=.01.
+
+`r gsResults`
+
+This effect indicates that the manipulation led to fewer enrollments in the experimental group compared to the control group.
+
+We didn't find a significant effect for net conversions. The confidence interval of our effect includes the d=0 and dmin=.01
+
+`r ncResults`
+
+This indicates that our manipulation has not affected the bottom-line of the business. In other words, we are still retaining the same amount of payments in the control group as in the experimental group. 
+
+
+####Sign Tests
+In addition to the tests above, we conducted a binomial test. For each of our metrics, we counted the number days with a positive difference between the control and experimental groups. 
+
+* The gross conversion rate was greater on 4/23 days for experimental group relative to the control group. The two-tailed p-value is 0.0026, which is below an uncorrected threshold of .05 and below of our corrected threshold of .03333.
+* The net conversion rate was greater on 10/23 days for experimental group relative to control group. The two-tailed p-value is 0.6776, indicating that there is no significant difference in conversion rates between the two groups.
+
+The adjusted p.values using the procedure by Benjamini & Yekutieli (2001) is 0.0078 and 1.0 for gross conversion and net conversion respectively. 
+
+####Summary
+The goal of this experiment was to decrease the frustration users experience from not knowing the time-commitments required to be successful in a course. The manipulation in this experiment involved a screener button that was essentially a reminder to students that if they don't have enough time to dedicate to a course, they might be better of no enrolling in the free trial. Hence, we expected that our manipulation would lead to a decrease in enrollment. Although a decrease in enrollment might sounds like a bad thing, we also checked if the manipulation affects in any way the number of payments that we end up reviving from users. 
+
+Our results show a reliable effect for gross conversion, indicating that the enrollment decreased due to the screener button. The results also show that there is no significant effect for net conversion, meaning that even though we have fewer users enrolling in the free trial, the number of users who eventually stay in the course after the free-trial period ends remains essentially unchanged. 
+
+###Recommendation
+The screener button seems to be effective at reducing the number of enrollments without affecting the bottom line of the business. By using the screener button, we should expect to reduce the frustration among incoming users and reduce the workload for coaches and TAs.
+
+
+##Follow-up Experiment
+Although the experiment above has removed some users who have been reminded about the time commitment required for the class, it is likely that there are still some users who might feel frustrated with the difficulty of the material and end up not using the paid service.
+
+For example, I'm currently taking a class on data visualization. The class requires that one have some experience with JavaScript, HTML, and CSS, however, these requirements are not spelled out clearly before enrolling in the nano-degree I ended up having to study a lot on my own in order to catch up, but I can see why a lot of students might just give up because they were not aware of these pre-requisites.
+
+Imagine this scenario: if a student signs up for a class in order to learn to make cool visualizations, but then ends up finding out that they need to know three languages to be able to work on the project, their experience might be very frustrating, and they might decide to not sign up for the paid service.  
+
+Hence, one thing I would do is include a detailed description of course pre-requisites and tell students that if they don't have those pre-requisites, they might benefit more from taking the course for free rather than signing up for the free trial. Moreover, the message prompt could link to some introductory materials or other introductory courses that would help the student build a foundational base before tackling the more advanced course they are trying to take. 
+
+The course of the experiment will be as follows:
+    1. Students see a class they would like to take
+    2. They click on the button to sign up for the free trial
+        - The control group proceeds to sign up for the free trial
+        - The experimental group is given a list of per-requisities and additional resources that would help students prepare for the course. They are then given the option to continue to sign up for the free trial or to take the course for free. 
+    
+
+* Hypothesis: the hypothesis is that the additional information about course pre-requisites will decrease frustration and work load among Udacity coaches without affecting the net retention rate. We should expect the gross retention rate for the experimental group to be smaller relative to the control group.
+
+* For this experiment, I would use the following measures:
+    - Invariant measures: number of unique cookies, number of clicks, and click-through-probability; these measures should be the same for both experimental and control groups.
+    - Evaluation metrics: gross conversion and net conversion. These metrics should change due to our manipulation. 
+    
+* The unit of diversion will be unique cookies, similar to the experiment we performed above. The reason why I picked cookies is because the users in the experimental group are not yet enrolled in the start free trial period when the prompt with additional information about the class appears on the screen.
+
+
+
+
+
+
+
+
+
+
+
