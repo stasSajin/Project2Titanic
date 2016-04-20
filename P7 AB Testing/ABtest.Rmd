@@ -144,9 +144,9 @@ samplesize <- function(alpha, beta, p, dmin) {
 }
 #turn off rounding
 options("scipen"=999)
-grossConversionSize<-samplesize(0.0275,.2,.20625,.01)
-retentionSize<-samplesize(0.0275,.2,.53,.01)
-netConversionSize<-samplesize(0.0275,.2,.1093125,.0075)
+grossConversionSize<-samplesize(0.05,.2,.20625,.01)
+retentionSize<-samplesize(0.05,.2,.53,.01)
+netConversionSize<-samplesize(0.05,.2,.1093125,.0075)
 
 #scale the sizes above
 gsSize<-round(grossConversionSize*2/.08)
@@ -155,7 +155,7 @@ ncSize<-round(netConversionSize*2/.08)
 ```
 
 
-I did not use the Bonferonni correction because it is overly-conservative. It is very likely that our metrics are correlated with each other, so instead I relied on a less conservative method for adjusting p-values proposed by Benjamini & Yekutiely (2001). The adjusted p-value based for 3 tests is **0.0275**. In other words, a test needs to have a p-value smaller than 0.0275 in order for us to reject the null hypothesis. Using this p-value should protect us from an increase in Type I error.
+I did not use the Bonferonni correction because it is overly-conservative. Moreover, our metrics are likely to be correlated with each other (see effect sizes section), so it would be more suitable to rely on other methods for adjusting p-values, such as Holm or false discovery rate method. 
 
 To calculate the sample size, I used the same formula as in the [online calculator](http://www.evanmiller.org/ab-testing/sample-size.html). The code for calculations can be found in the .rmd file. The sizes required for each evaluation metric are: 
 
@@ -163,26 +163,12 @@ $n_{grossConversion}$ = `r gsSize`;
 $n_{retention}$ = `r rSize`;
 $n_{netConversion}$ = `r ncSize`;
 
-One thing that becomes very striking is that we require a very large sample size for our retention metric. We require a total of 5,604,242 pageviews if we want to evaluate the retention metric. Since our daily traffic is only 40,000, it will take us several months to reach a decision in regard to the retention metric. Hence, it would be more suitable to use `gross conversion` and `net conversion` as our only decision metrics and discard `retention` as an evaluation metric.   
+One thing that becomes very striking is that we require a very large sample size for our retention metric. We require a total of 4,741,212 pageviews if we want to evaluate the retention metric. Since our daily traffic is only 40,000, it will take us several months to reach a decision in regard to the retention metric. Hence, it would be more suitable to use `gross conversion` and `net conversion` as our only decision metrics and discard `retention` as an evaluation metric.   
 
-
-
-```{r}
-grossConversionSize<-samplesize(.03333,.2,.20625,.01)
-netConversionSize<-samplesize(.03333,.2,.1093125,.0075)
-
-gsSize<-round(grossConversionSize*2/.08)
-ncSize<-round(netConversionSize*2/.08)
-```
-
-I have recalculated the adjusted p-value using Benjamini & Yekutiely (2001) method. The adjusted p-value for the two metrics is **.03333**. Using the formula for calculating size of the sample, the required sample for gross conversion and net conversion is:
-$n_{grossConversion}$ = `r gsSize`;
-$n_{netConversion}$ = `r ncSize`;
-
-Our required sample size is the larger of the two values: **769675**
+Our required sample size is the larger of the two values: **`r rSize`**
 
 ####Duration vs. Exposure
-Using the screener button constitutes a minimal risk, since users are simply provided a reminder regarding time commitment required to be successful in the course. Hence, I would advise having 100% exposure to this experiment. This means that we are dedicating all the 40,000 daily traffic. Considering that we require a sample of 769,675, it will take us 19.24 days to complete the data collection for this experiment.  
+Using the screener button constitutes a minimal risk, since users are simply provided a reminder regarding time commitment required to be successful in the course. Hence, I would advise having 100% exposure to this experiment. This means that we are dedicating all the 40,000 daily traffic. Considering that we require a sample of 685,325 pageviews, it will take us **18 days** to complete the data collection for this experiment.  
 
 ##Experiment Analysis
 ###Sanity Checks
@@ -238,18 +224,30 @@ All sanity checks have been passed.
 
 ###Result Analysis
 ####Effect Size Tests
-We have two evaluations metrics: gross conversion and net conversion. For all the tests I assume an alpha of .03333. See the section **Number of samples vs power**, where I discuss why I chose this value for alpha. An alpha value of .03333 provides a balance between the overly-conservative Bonferroni correction and no correction at all. The corresponding z-value for an alpha of 0.03333 is *2.1281*
-
-```{r}
-alpha=.03333
-z=2.1281
+```{r, warning=FALSE}
+alpha=.05
+z=1.96
 
 #we'll need to subset the data and remove the dates for which we have no info about enrollment. We'll be using the first 23 days
 dataComplete<-na.omit(data)
 #create new colums that find the daily gorss conversion and daily net conversion
 dataComplete$GrossConversion<-dataComplete$Enrollments/dataComplete$Clicks
 dataComplete$NetRetention<-dataComplete$Payments/dataComplete$Clicks
+library(ggplot2)
+```
 
+We have two evaluations metrics: gross conversion and net conversion. For all the tests I assume an alpha of .05 and a z value of 1.96. I did not use Bonferroni correction because a correlation test between gorss conversion and net conversion revealed that the two metrics are coorelated (r=0.642, t=5.5591, p<0.0001). You can examine the relationship in the figure below.
+
+```{r, results='asis'}
+ggplot(dataComplete, aes(x=GrossConversion, y=NetRetention))+
+    geom_point()+
+    theme_minimal()+
+    geom_smooth(method="lm")+
+    ggtitle("Positive relationship between gross conversion and net conversion")
+```
+
+
+```{r}
 #create subsets for control and experimental
 dataControl<-subset(dataComplete, Group=="Control")
 dataExperimental<-subset(dataComplete, Group=="Experimental")
@@ -277,25 +275,25 @@ gsResults<-testMetric(controlN=sum(dataControl$Clicks),
     controlR=sum(dataControl$Enrollments)/sum(dataControl$Clicks),
     experimentalR = sum(dataExperimental$Enrollments)/sum(dataExperimental$Clicks),
     dmin=-.01,
-    z=2.1281) 
+    z=1.96) 
 
 ncResults<-testMetric(controlN=sum(dataControl$Clicks), 
     experimentalN = sum(dataExperimental$Clicks),
     controlR=sum(dataControl$Payments)/sum(dataControl$Clicks),
     experimentalR = sum(dataExperimental$Payments)/sum(dataExperimental$Clicks),
     dmin=-.0075,
-    z=2.1281) 
+    z=1.96) 
 ```
 
 All the tests have been performed in R. The calculations and the code can be found in the .rmd file.
 
-We found a significant effect for gross conversion. The confidence interval of our effects excludes both d=0 and dmin=.01.
+We found a significant effect for gross conversion. The confidence interval of our effects excludes both d=0 and dmin=.01. In other words, the effect passes both the statistical  and practical significance thresholds. 
 
 `r gsResults`
 
 This effect indicates that the manipulation led to fewer enrollments in the experimental group compared to the control group.
 
-We didn't find a significant effect for net conversions. The confidence interval of our effect includes the d=0 and dmin=.01
+We didn't find a significant effect for net conversions. The confidence interval of our effect includes the d=0 and dmin=.01. We don't pass the statistical and practical significance thresholds. 
 
 `r ncResults`
 
@@ -303,12 +301,12 @@ This indicates that our manipulation has not affected the bottom-line of the bus
 
 
 ####Sign Tests
-In addition to the tests above, we conducted a binomial test. For each of our metrics, we counted the number days with a positive difference between the control and experimental groups. 
+In addition to the tests above, we conducted a binomial test. For each of our metrics, we counted the number days with a positive difference between the control and experimental groups. I did not use Bonferroni correction. As I point above, the two metrics are correlated with each other, and Bonferroni adjustment to p-values would be overly-conservative. 
 
-* The gross conversion rate was greater on 4/23 days for experimental group relative to the control group. The two-tailed p-value is 0.0026, which is below an uncorrected threshold of .05 and below of our corrected threshold of .03333.
+* The gross conversion rate was greater on 4/23 days for experimental group relative to the control group. The two-tailed p-value is 0.0026, which is below an uncorrected threshold of .05. 
 * The net conversion rate was greater on 10/23 days for experimental group relative to control group. The two-tailed p-value is 0.6776, indicating that there is no significant difference in conversion rates between the two groups.
 
-The adjusted p.values using the procedure by Benjamini & Yekutieli (2001) is 0.0078 and 1.0 for gross conversion and net conversion respectively. 
+
 
 ####Summary
 The goal of this experiment was to decrease the frustration users experience from not knowing the time-commitments required to be successful in a course. The manipulation in this experiment involved a screener button that was essentially a reminder to students that if they don't have enough time to dedicate to a course, they might be better of no enrolling in the free trial. Hence, we expected that our manipulation would lead to a decrease in enrollment. Although a decrease in enrollment might sounds like a bad thing, we also checked if the manipulation affects in any way the number of payments that we end up reviving from users. 
