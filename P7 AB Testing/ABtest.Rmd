@@ -1,7 +1,7 @@
 ---
 title: "Improving user experience through A/B Testing"
 author: "Stas Sajin"
-date: "April 21, 2016"
+date: "April 22, 2016"
 output: 
   rmdformats::readthedown:
     highlight: kate
@@ -53,7 +53,7 @@ Although we have 4 evaluation metrics, I will not use `number of user-ids` since
 
 * `Retention` metric should increase in the Experimental group. We should expect the number of students enrolled after the free trial to be the same for both experimental group and control group. Nontheless, we also expect the number of user ids who go through the free trial to be smaller for experimental group. Since the numerator stays the same and the denominator decreases in the experimental group, we should expect that the screener button will lead to a larger retention ratio. 
 
-*  `Net conversion` is expected to be the same for the control and experimental group. We don't want our manipulation to affect the number of students enrolled, since this would affect our profitability. 
+*  `Net conversion` we expect net conversion to not decrease as a result of our manipulation. We don't want our manipulation to decrease the number of students enrolled, since this would affect our profitability. We would preffer if this metric remained the same or increased.  
 
 
 ###Measuring Standard Deviation
@@ -245,7 +245,7 @@ dataComplete$NetRetention<-dataComplete$Payments/dataComplete$Clicks
 library(ggplot2)
 ```
 
-We have two evaluations metrics: gross conversion and net conversion. For all the tests I assume an alpha of .05 and a z value of 1.96. I did not use Bonferroni correction because a correlation test between gorss conversion and net conversion revealed that the two metrics are coorelated (r=0.642, t=5.5591, p<0.0001). You can examine the relationship in the figure below. Also, Bonferroni correction would not be appropriate here because we want both of our hypotheses to be confirmed. If our reduction in gross conversion comes at the cost of a decrease in net conversion, we would likely not implement the screener button. 
+We have two evaluations metrics: gross conversion and net conversion. For all the tests I assume an alpha of .05 and a z value of 1.96. I did not use Bonferroni correction because a correlation test between gorss conversion and net conversion revealed that the two metrics are coorelated (r=0.642, t=5.5591, p<0.0001). You can examine the relationship in the figure below. Also, Bonferroni correction would not be appropriate here because we are interested in only one of our metrics (i.e., gross conversion) being significant. If our reduction in gross conversion comes at the cost of a decrease in net conversion, we would likely not implement the screener button. 
 
 ```{r, results='asis'}
 ggplot(dataComplete, aes(x=GrossConversion, y=NetRetention))+
@@ -302,7 +302,7 @@ We found a significant effect for gross conversion. The confidence interval of o
 
 This effect indicates that the manipulation led to fewer enrollments in the experimental group compared to the control group.
 
-We didn't find a significant effect for net conversions. The confidence interval of our effect includes the d=0. Nontheless, the lower bound of our confidence interval is smaller than the practical significance threshold, indicating that there is a chance that the screener button could affect our profitability.  
+We didn't find a significant effect for net conversions. The confidence interval of our effect includes the d=0. Nontheless, the lower bound of our confidence interval is smaller than the negative practical significance threshold (`dmin=-0.01`), indicating that there is a chance that the screener button could affect our profitability.  
 
 `r ncResults`
 
@@ -326,7 +326,7 @@ The screener button seems to be effective at reducing the number of enrollments.
 
 Nontheless, the screener button also seems to reduce slightly the profitability to the business. For instance, the effect size tests indicates that the practical significance boundry falls within the 95% CI. 
 
-Because our confidence interval includes the practical signifiance boundry, I would recommend against implementing the screener button feature.
+Because our confidence interval includes the negative practical signifiance boundry, I would recommend against implementing the screener button feature.
 
 
 ##Follow-up Experiment
