@@ -245,7 +245,7 @@ dataComplete$NetRetention<-dataComplete$Payments/dataComplete$Clicks
 library(ggplot2)
 ```
 
-We have two evaluations metrics: gross conversion and net conversion. For all the tests I assume an alpha of .05 and a z value of 1.96. I did not use Bonferroni correction because a correlation test between gorss conversion and net conversion revealed that the two metrics are coorelated (r=0.642, t=5.5591, p<0.0001). You can examine the relationship in the figure below. Also, Bonferroni correction would not be appropriate here because we are interested in only one of our metrics (i.e., gross conversion) being significant. If our reduction in gross conversion comes at the cost of a decrease in net conversion, we would likely not implement the screener button. 
+We have two evaluations metrics: gross conversion and net conversion. For all the tests I assume an alpha of .05 and a z value of 1.96. I did not use Bonferroni correction because a correlation test between gorss conversion and net conversion revealed that the two metrics are coorelated (r=0.642, t=5.5591, p<0.0001). You can examine the relationship in the figure below. Also, Bonferroni correction would not be appropriate here because we are interested in both of our metrics to fit our expectations. If our reduction in gross conversion comes at the cost of a decrease in net conversion, we would likely not implement the screener button. 
 
 ```{r, results='asis'}
 ggplot(dataComplete, aes(x=GrossConversion, y=NetRetention))+
