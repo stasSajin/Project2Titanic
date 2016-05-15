@@ -2,6 +2,10 @@
 <meta charset="utf-8">
 <style>
 
+body {
+  font: 15px sans-serif;
+}
+
 .axis path,
 .axis line {
   fill: none;
@@ -13,21 +17,11 @@
   display: none;
 }
 
-h1{
-    font-family: arial;
-    width: 1000px;
-    margin: 0 auto;
-    font-size: 30px;
-    text-align: center;
-    }
+p {
+  text-align: center;
+  font-size: 15;
 
-
-h2{
-    font-family: arial;
-    width: 1000px;
-    margin: 0 auto;
-    font-size: 15px;
-    }
+}
 
 .line {
   fill: none;
@@ -45,14 +39,12 @@ svg {
 <script src="//d3js.org/d3.v3.min.js"></script>
 
 <h1>
-  Estimated vs. Realized returns for over 25,000 Prosper loans
-</h1>>
 
-<h2>
-When an investor decides to lend his or her money through Prosper, they are generally given an estimate as to how much return they should expect on their investment. Nontheless, the estimate that they are given is just that, an estimate, and might not be a true reflection of the realized return on the loan. The following plot shows the difference between estimated and realized returns for the periods between September, 2009 and Feburary, 2014. The returns are for 25992 Prosper loans.
+</h1>
 
-</h2>
 
+<p>
+</p>
 
 <script>
 var margin = {top: 30, right: 140, bottom: 90, left: 50},
@@ -92,7 +84,7 @@ var svg = d3.select("body").append("svg")
     .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
 //Data imported from csv file created in R. Data is from all airports that average more than 10 flights per day.
-d3.csv("prosperData2.csv", function(error, data) {
+d3.csv("prosperData1.csv", function(error, data) {
   if (error) throw error;
 
 //setting color range for all variables that are not a time variable.
@@ -185,6 +177,16 @@ d3.csv("prosperData2.csv", function(error, data) {
       .attr("class", "line")
       .attr("d", function(d) { return line(d.values); })
       .style("stroke", function(d) { return color(d.name); });
+
+
+//Titles and Subtitles
+    region.append("text")
+      .attr('x', width/2)
+      .attr('y', -8)
+      .style("font-family", "sans-serif")
+      .style("font-size","24px")
+      .style("text-anchor", "middle")
+      .text("Estimated vs Realized returns for over 20,000 prosper loans ");
 
 // append a g for all the mouse over nonsense
     var mouseG = svg.append("g")
