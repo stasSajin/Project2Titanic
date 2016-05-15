@@ -4,9 +4,9 @@ The visualization can be viewed here: http://bl.ocks.org/stasSajin/raw/a13083b75
 ##Summary
 This project aims to compare the realized returns with the estimated returns for about 25,000 loans from the Prosper Loan Data. The dataset used includes only the loans that have either been paid in full, charged-off or defaulted. In other words, it does not include loans that have not been repaid yet. I have cleaned up the data in R (see the .rmd file).
 
-	* The visualization focuses on a very clear and specific finding, which is that Prosper's estimated return had been over-estimated relative to the realized return. 
-	* This finding is communicated by showcasing that the the realized returns are consistently lower during the July 2009 till Nov 2013.
-	* This visualization also showcases that Prosper has gotten better with their under-writing, as the divergence between the estimated and realized returns has improved over time. 
+* The visualization focuses on a very clear and specific finding, which is that Prosper's estimated return had been over-estimated relative to the realized return. 
+* This finding is communicated by showcasing that the the realized returns are consistently lower during the July 2009 till Nov 2013.
+* This visualization also showcases that Prosper has gotten better with their under-writing, as the divergence between the estimated and realized returns has improved over time. 
 
 ##Design
 Initially, I reflected on using a bar chart, which shows the bar for the estimated and the realized returns. Nonetheless, the bar chart hides a very interesting pattern in the data, which is that the realized and estimated returns converge over time, so I decided to rely on line plots. I used line plots for several reasons:
