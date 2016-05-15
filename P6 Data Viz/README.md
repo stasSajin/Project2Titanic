@@ -1,5 +1,8 @@
-# Udacity DataAnalyst Nanodegree
-Udacity Data Analyst Nanodegree Projects
+# Data Viz Project
+
+##Summary
+
+
 
 
 ##Feedback
@@ -27,3 +30,14 @@ This graphs helps explain a lot of questions as to why I was never achieving the
 What is the issue with the dip in realized returns? Is it because there are only a few loans for that period? Also, why is there no info present for the more recent loans?
 
 I suggest you fix the axis and include a summary for the plot, so that the main take-a-way is easily available. 
+
+
+
+
+Resources used
+
+* [d3 tutorial](https://d3js.org/)
+* [CSS Tutorial](http://www.w3schools.com/css/default.asp)
+* [Creating multi-series line plot with mouse-over](http://stackoverflow.com/questions/34886070/d3-js-multiseries-line-chart-with-mouseover-tooltip/34887578#34887578)
+* [Scott Murray's Book Introduction to D3](http://alignedleft.com/tutorials/d3)
+* [D3 in Action by Elijah Meeks](https://www.manning.com/books/d3-js-in-action)
