@@ -1,0 +1,285 @@
+---
+title: "Exploratory Analysis for Prosper Loan Data"
+author: "Stas Sajin"
+date: "May 14, 2016"
+output: markdowntemplates::bulma
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE, warning = FALSE, 
+                      message = FALSE, tidy=TRUE, fig.align = 'center', 
+                      fig.width = 12, fig.keep='all')
+```
+
+## Introduction
+The following code aims to clean up the Prosper dataset. The cleaned up dataset will be used to create the visualization in d3.
+
+
+
+###Libraries
+Load the following libraries 
+```{r, echo=TRUE}
+library(data.table)
+library(ggplot2)
+library(rmarkdown)
+library(dplyr)
+library(gridExtra)
+library(GGally)
+library(ggthemes)
+library(Hmisc)
+library(lubridate)
+library(zoo)
+library(knitr)
+library(tidyr)
+```
+
+
+###Data Cleaning and Pre-Processing
+The dataset contains 113,937 loans and 81 variables. The data is available on the following [page](https://www.google.com/url?q=https://s3.amazonaws.com/udacity-hosted-downloads/ud651/prosperLoanData.csv&sa=D&ust=1458698381541000&usg=AFQjCNH0A3HCOrotQs-7ITXTSwsP3yFeEg). The variable descriptions can be found [here](https://www.google.com/url?q=https://docs.google.com/spreadsheet/ccc?key%3D0AllIqIyvWZdadDd5NTlqZ1pBMHlsUjdrOTZHaVBuSlE%26usp%3Dsharing&sa=D&ust=1458698381543000&usg=AFQjCNEVz02Hyn01T94iLHVSPLRRUryg1Q).
+
+
+```{r dataLoad}
+prosper<-fread('prosperLoanData.csv', na.strings=c("NA",""))
+#change prosper into a dataframe
+prosper<-as.data.frame(prosper)
+```
+
+The first I will do with the data is perform several checks on the data quality. The description of the loan dataset specifies that there are 113937 loans, so we should expect to see 113937 unique ListingKey and ListingNumber counts. 
+
+```{r, unique}
+#find the unique counts in ListingKey and listingNumber
+uniqueNumbers<-length(unique(prosper$ListingNumber))
+cat("Total unique ListingNumber:", as.character(uniqueNumbers))
+uniqueKeys<-length(unique(prosper$ListingKey))
+cat("Total unique ListingKey:", as.character(uniqueKeys))
+```
+
+Unfortunately, the dataset indicates that there are 113066 unique keys and numbers, so there likely to be some duplicates. I will examine the duplicate values for loans, just to make sure that the duplication doesn't extend only to the ListingNumber and ListingKey, but to all 81 variables. Any duplicated rows will be removed from the dataframe. 
+
+```{r duplicate}
+#extract the ListingNumber that are duplicates
+Listing_number_duplicated<-prosper$ListingNumber[duplicated
+                                                 (prosper$ListingNumber)]
+
+#create a dataset that extract rows for all duplicate records
+duplicated_rows<-subset(prosper, prosper$ListingNumber %in% 
+                            Listing_number_duplicated)
+
+#View(duplicated_rows)
+
+###it seems like the duplicate values are real duplicates; 
+#remove dulpicated rows
+p_no_duplicates<-prosper[!duplicated(prosper$ListingNumber),]
+
+#remove prosper and duplicated_rows dfs from global environment so as to not 
+#hog memory
+rm(duplicated_rows)
+rm(prosper)
+```
+
+I noticed that there are several columns in the dataset that specify the date, so I will make sure to convert those columns in date format. 
+
+```{r date}
+#create vector with date variable names.
+date_variables<-c("ListingCreationDate","ClosedDate",    "DateCreditPulled","FirstRecordedCreditLine","LoanOriginationDate")
+
+#convert into date format year-month-date hour:minute:second
+p_no_duplicates[,date_variables] <-lapply(p_no_duplicates[,date_variables],
+                                          ymd_hms)
+
+#I will also create a column that will indicate if the data is for pre-2009 or 
+#after 2009 based on whether there is a an NA value in the 
+#EstimatedEffectiveYield variable. 
+p_no_duplicates$preAfter2009<-
+    ifelse(is.na(p_no_duplicates$EstimatedEffectiveYield)==TRUE,
+        'pre2009','after2009')
+
+#examine the counts, just to make sure that everything looks good. 
+#There shold be 29084 loans before 2009.
+table(p_no_duplicates$preAfter2009)
+```
+
+
+Next, I will look at some of the variable characteristics using the describe function from [Hmisc package](https://cran.r-project.org/web/packages/Hmisc/index.html). The output of this function is very useful when it comes to examined which variables should be used in EDA. Note that the code below will not output the result in the html file because the summary output for all 81 variables will take some space. The reader is nonetheless welcome to run this code in the .rmd file.
+
+```{r echo=TRUE, results="hide"}
+describe.data.frame(p_no_duplicates)
+```
+
+
+###1. How does the distribution of estimated return look like?
+As an investor, I'm interested in examining the relationship between a variety of factors and return. One thing I noticed when examining variable descriptions, is that some variables have data only for loan listings after 2009 (for instance, estimated returns variable has the data available only after 2009). 
+
+For now I will focus on LenderYield, which represents the interest rate on the loan minus the servicing fee. I will break down the yields for the periods before and after 2009, because I noticed that a lot of variables seem to apply only for the periods after 2009, and I want to find out why. Later, I will examine the estimated return, which accounts for estimated losses due to chargeoff, defaults, and other fees.    
+
+
+```{r}
+#set the LenderYield Variable as numberic
+p_no_duplicates$LenderYield<-as.numeric(p_no_duplicates$LenderYield)
+
+theme_set(theme_solarized())
+
+p1<-ggplot(data=p_no_duplicates, aes(x=LenderYield, fill=preAfter2009))+
+    geom_density(alpha=.5, adjust=.75)+
+    ggtitle('Yield for before and after 2009 periods')
+
+p2<-ggplot(p_no_duplicates, aes(preAfter2009, LenderYield)) + 
+    geom_boxplot(aes(fill = preAfter2009)) +
+    theme(legend.position = "none")+
+    ggtitle('Boxplots for both pre and after 2009 periods')
+
+grid.arrange(p1,p2, nrow=2)
+```
+
+A few interesting things can be gathered from this graph:  
+    1. The distribution of yields seems to be somewhat bimodal in both periods, since there are a lot of loans with really good returns. This is interesting, because later we can explore in what way are the good loans different from the loans that provide smaller returns.  
+    2. There seems to be a larger variability in yields for pre-2009 period compared to the yields in the period after 2009. This suggests that the risk of loans (i.e., variability in yields) pre-2009 was a bit higher.
+    3. The median seems to be a bit higher for the period after 2009. Moreover, the boxplot for the pre2009 period shows more variability, with some loans actually having negative yields (likely because the underwriting fees ate up some of the return potential).
+
+Here is the info about means, medians, and 95%CI for each period. I assume that the confidence interval is within 1.96 standard errors from the mean yield of each period.
+
+```{r}
+p_no_duplicates %>% group_by(preAfter2009) %>%
+    summarise(mean=mean(LenderYield),
+            median=median(LenderYield),
+            n=n(),
+            LCI=(mean(LenderYield)-(1.96*sd(LenderYield)/length(LenderYield))),
+            UCI=(mean(LenderYield)+(1.96*sd(LenderYield)/length(LenderYield))))
+```
+
+Both the boxplot and the descriptive statistics indicate that the median returns are a bit higher for the period after 2009. This suggests that there might be a regime change between the two periods. In the following graphs, I will examine more closely if there is any regime change happening between periods before and after 2009. I will plot the LenderYield variable across time (i.e., for each loan origination date). The plot below will show several levels of granularity for yields.
+
+```{r, }
+#create colums for day, month, and year of loan origination
+p_no_duplicates$dayOrigination<-ymd(
+    as.Date(p_no_duplicates$LoanOriginationDate))
+p_no_duplicates$monthOrigination<-as.yearmon(
+    as.Date(p_no_duplicates$LoanOriginationDate))
+p_no_duplicates$yearOrigination<-year(p_no_duplicates$LoanOriginationDate)
+                           
+#plot the yield at the most granular, individual loan creation date scale
+p1<-ggplot(data=p_no_duplicates, aes(x=ListingCreationDate, y=LenderYield))+
+    geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean, alpha=.75)+
+    ggtitle("Most Granular, individual loan yields")+
+    geom_hline(yintercept = c(.35,.03))
+
+
+#plot the yield on a daily scale
+p2<-ggplot(data=p_no_duplicates, aes(x=ymd(as.Date(ListingCreationDate)), 
+                                     y=LenderYield))+
+    geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean)+
+    ggtitle("Daily loan yields")
+
+#plot the yield on a monthly scale
+p3<-ggplot(data=p_no_duplicates, aes(x=as.yearmon(as.Date(ListingCreationDate)), y=LenderYield))+
+    geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean)+
+    ggtitle("Monthly loan yields")
+
+#plot the yield on a yearly scale
+p4<-ggplot(data=p_no_duplicates, aes(x=year(ListingCreationDate), 
+                                     y=LenderYield))+
+    geom_line(aes(color=preAfter2009), stat='summary', fun.y=mean)+
+    ggtitle("Yearly loan yields")
+
+grid.arrange(p1,p2,p3,p4, ncol=2)
+```
+
+The first thing we can notice in this data is that there seems to be a break between the two periods when no loan listings were created. This break is unusual, but after some searching, I found the [SEC Cease and Tesist order to Prosper](https://www.sec.gov/litigation/admin/2008/33-8984.pdf), which stipulates that the role of Prosper is more of a bank, rather thank than a marketplace for loans. Because Prosper is ultimately responsible for the underwriting process, they had to discontinue for a period their operations and market their loans as actual investments. Hence, they stopped listing any loans until they conformed to SEC regulations.  
+
+Another interesting thing to note, when examining the individual loan yields, is that in the period before 2009, there are some loans that are were listed with really low yields (below 3%) and really high yields above 30% (see the horizontal lines marking these regions in panel 1). It is very unusual that some loans had negative yields, since this means that the lender is paying the borrowers to take out the loan. After some exploration, I found that there are 22 loans that had a yield at or below zero. None of the loans had any issues with them (all the listings for these loans had all the information and there was no evidence pointing out that these loans are bad data) 
+
+```{r, echo=FALSE}
+a<-p_no_duplicates %>% filter(LenderYield<=0)
+```
+
+
+####iii. How do estimated returns compare with actual returns?
+One issue with the plot above is that returns are estimates provided by Prosper at the time the listing was created. This is an issue, since estimated returns are predictions about the future rather than historical values. In this section, I will try to achieve a measure of realized annualized historical return for loan whose status was either Completed, ChargedOff, or Defaulted.
+
+
+First what I will do is create a column called AnnualizedReturn that finds the realized annualized returns for Completed, ChargedOff or Defaulted Loans. 
+
+For completed loans, I calculate the cumulative return as follows:
+
+$$r_c=(CustomerPayments-LoanOriginalAmount-ServiceFees)/LoanOriginalAmount$$
+
+For Chargeoffs and defaulted loans, the cumulative return formula is:
+
+$$r_c=(CustomerPayments+NonPrincipalRecoveryPayments-ServiceFees-CollectionFees-\\
+            -LoanOriginalAmount-NetPrincipalLoss)/LoanOriginalAmount$$
+
+After finding the cumulative return, I annualized it using this formula:
+
+$$r_a=(1+r_c)^{12/LoanMonthsSinceOrigination} $$
+
+```{r returnCalculations}
+#convert these colums to numeric
+numColums<- c("LoanMonthsSinceOrigination","LoanOriginalAmount",
+              "LP_CustomerPayments","LP_CustomerPrincipalPayments",
+              "LP_InterestandFees","LP_ServiceFees",
+              "LP_CollectionFees","LP_GrossPrincipalLoss","LP_NetPrincipalLoss",
+              "LP_NonPrincipalRecoverypayments","PercentFunded")
+
+p_no_duplicates[numColums] <- sapply(p_no_duplicates[numColums],as.numeric)
+
+
+#find the returns for completed loans
+completed<-p_no_duplicates %>% filter(LoanStatus=="Completed") %>%
+    mutate(cumulativeReturn=(LP_CustomerPayments-LoanOriginalAmount+
+                                 LP_ServiceFees)/LoanOriginalAmount) %>%
+    mutate(AnnualizedReturn=
+               ((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
+
+
+#find the returns for charge offs and defaults; I calculate the return as 
+#follows
+chargeoff<-p_no_duplicates %>% 
+    filter(LoanStatus=="Chargedoff" | LoanStatus=="Defaulted") %>%
+    mutate(cumulativeReturn=(LP_CustomerPayments+ 
+            LP_NonPrincipalRecoverypayments+LP_ServiceFees+LP_CollectionFees-
+    (LoanOriginalAmount-LP_NetPrincipalLoss)) /LoanOriginalAmount) %>%
+    mutate(AnnualizedReturn=
+            ((1+cumulativeReturn)^(12/LoanMonthsSinceOrigination))-1)
+
+pastLoans<-rbind(completed, chargeoff)
+
+#examine the dataframes 
+# a<-completed %>% select(LoanMonthsSinceOrigination, EstimatedReturn, 
+#cumulativeReturn, yearlyReturn)
+# 
+# b<-chargeoff %>% select(BorrowerAPR,LoanMonthsSinceOrigination, 
+#EstimatedReturn, cumulativeReturn, yearlyReturn)
+```
+
+
+```{r}
+#create annualizedRRatio
+pastLoans$annualizedRRatio<-pastLoans$AnnualizedReturn/
+    as.numeric(pastLoans$`ProsperRating (numeric)`)
+#create estimatedRRatio
+pastLoans$estimatedRRatio<-pastLoans$EstimatedReturn/
+    as.numeric(pastLoans$`ProsperRating (numeric)`)
+
+pastLoans %>% group_by(`ProsperRating (numeric)`) %>%
+    summarise(meanRealized=mean(annualizedRRatio, na.rm=TRUE),
+              medianRealized=median(annualizedRRatio, na.rm=TRUE),
+              meanEstimated=mean(estimatedRRatio, na.rm=TRUE),
+              medianEstimated=median(estimatedRRatio, na.rm=TRUE))
+
+```
+
+```{r}
+#create a new variable for year month 
+pastLoans$ListingCreationDate<-as.yearmon(as.Date(pastLoans$ListingCreationDate))
+
+dataPlot1<-pastLoans %>%
+    select(ListingCreationDate, EstimatedReturn, AnnualizedReturn) %>%
+    filter(!is.na(AnnualizedReturn)) %>%
+    group_by(ListingCreationDate) %>%
+    summarise(Estimated=mean(EstimatedReturn)*100,
+              Realized=mean(AnnualizedReturn)*100)
+
+
+write.csv(dataPlot1,"prosperData.csv") 
+```
+

@@ -591,7 +591,6 @@ ggplot(subset(pastLoans,!is.na(EstimatedReturn)),
     theme(legend.position = "none")+
     scale_y_continuous(breaks=seq(-1, .3, .05))+
     ggtitle("Ratio between realized return and prosper rating")
-
 ```
 
 It seems like we gain the largest increase in return when we are buying the most the loans with a prosper rating of 1. The graph shows that there is a non-linear decrease in return for every unit of risk taken. Although one could jump to the conclusion that the risk-adjusted profile for loans with prosper rating of 1 looks the best, the prosper rating is not granular enough to account to measure risk. For instance, one issue with the prosper rating is that it has an ordinal scale, so that a decrease in risk from 1 to 2 does not translate to the same magnitude in the decrease in risk from 2 to 3. For this reason, below I will try to create a Sharpe measure for each loan that will be based on purely interval measures. 
